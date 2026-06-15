@@ -17,11 +17,14 @@ Item {
   property bool isStale: false
   property string staleReason: ""
   property bool collectorRunning: false
+  property var activeCollectorProcess: null
+  property double collectorStartedAt: 0
   property string representationMode: "remaining"
   property int settingsVersion: 0
 
   readonly property string collectorPath: pluginApi.pluginDir + "/scripts/ai-usage-collector"
   readonly property int refreshIntervalMs: Math.max(10000, pluginApi.pluginSettings.refreshIntervalMs || 60000)
+  readonly property int collectorTimeoutMs: Math.max(10000, pluginApi.pluginSettings.collectorTimeoutMs || 30000)
   readonly property int staleAfterMs: pluginApi.pluginSettings.staleAfterMs || 600000
   readonly property string timezone: pluginApi.pluginSettings.timezone || "UTC"
 
@@ -41,6 +44,14 @@ Item {
     running: true
     triggeredOnStart: false
     onTriggered: root.refreshNow()
+  }
+
+  Timer {
+    id: collectorTimeoutTimer
+
+    interval: root.collectorTimeoutMs
+    repeat: false
+    onTriggered: root.cancelActiveCollector("collector timed out")
   }
 
   function providerSettings() {
@@ -88,20 +99,67 @@ Item {
   }
 
   function refreshNow() {
-    if (collectorRunning)
+    if (collectorRunning) {
+      if (collectorStartedAt > 0 && Date.now() - collectorStartedAt > collectorTimeoutMs)
+        cancelActiveCollector("previous collector timed out");
+      else
+        return false;
+    }
+
+    var ids = enabledProviderIds();
+    if (ids.length === 0) {
+      providers = [];
+      lastUpdated = new Date().toISOString();
+      isStale = false;
+      staleReason = "";
+      rebuildSummary();
+      rebuildTooltipRows();
       return false;
+    }
 
     collectorRunning = true;
+    collectorStartedAt = Date.now();
     var proc = Qt.createQmlObject('import QtQuick; import Quickshell.Io; Process { stdout: StdioCollector {} }', root, "AiUsageCollector");
-    proc.command = ["env", "AI_USAGE_TIMEZONE=" + timezone, "AI_USAGE_ENABLED_PROVIDERS=" + enabledProviderIds().join(","), collectorPath];
+    activeCollectorProcess = proc;
+    proc.command = ["env", "AI_USAGE_TIMEZONE=" + timezone, "AI_USAGE_ENABLED_PROVIDERS=" + ids.join(","), collectorPath];
     proc.exited.connect(function (exitCode) {
+      if (proc !== root.activeCollectorProcess) {
+        proc.destroy();
+        return;
+      }
+
       var text = String(proc.stdout.text || "");
       root.collectorRunning = false;
+      root.collectorStartedAt = 0;
+      root.activeCollectorProcess = null;
+      collectorTimeoutTimer.stop();
       root.consumeCollectorOutput(text, exitCode);
       proc.destroy();
     });
+    collectorTimeoutTimer.restart();
     proc.running = true;
     return true;
+  }
+
+  function cancelActiveCollector(reason) {
+    var proc = activeCollectorProcess;
+    activeCollectorProcess = null;
+    collectorRunning = false;
+    collectorStartedAt = 0;
+    collectorTimeoutTimer.stop();
+
+    if (proc) {
+      try {
+        if (proc.running)
+          proc.signal(15);
+      } catch (e) {}
+      proc.destroy();
+    }
+
+    isStale = true;
+    staleReason = reason || "collector stopped";
+    rebuildSummary();
+    rebuildTooltipRows();
   }
 
   function consumeCollectorOutput(text, exitCode) {
@@ -440,7 +498,7 @@ Item {
     if (!provider || provider.available === false)
       return shortLabel + " " + compactStateText(provider);
 
-    var label = shortLabel + ((provider.stale || isStale) ? "*" : "");
+    var label = shortLabel + (provider.stale ? "*" : "");
     if (provider.mode === "exact-remaining") {
       var rows = quotaWindows(provider);
       if (rows.length === 0)
@@ -464,7 +522,7 @@ Item {
       return shortLabel + " " + (unavailableState || "n/a");
     }
 
-    var label = shortLabel + ((provider.stale || isStale) ? "*" : "");
+    var label = shortLabel + (provider.stale ? "*" : "");
     if (provider.mode === "exact-remaining") {
       var rows = quotaWindows(provider);
       if (rows.length === 0)
