@@ -29,20 +29,35 @@ Item {
   implicitWidth: contentWidth
   implicitHeight: contentHeight
 
-  NPopupContextMenu {
-    id: contextMenu
-    model: [
+  function contextMenuItems() {
+    if (root.service)
+      root.service.settingsVersion;
+    return [
+      {
+        "label": root.service && root.service.isCompactMode() ? "Compact mode: On" : "Compact mode: Off",
+        "action": "toggle-compact",
+        "icon": "arrows-minimize"
+      },
       {
         "label": "Refresh now",
         "action": "refresh",
         "icon": "refresh"
       }
-    ]
+    ];
+  }
+
+  NPopupContextMenu {
+    id: contextMenu
+    model: root.contextMenuItems()
 
     onTriggered: action => {
       contextMenu.close();
       PanelService.closeContextMenu(screen);
-      if (action === "refresh" && root.service)
+      if (!root.service)
+        return;
+      if (action === "toggle-compact")
+        root.service.toggleCompactMode();
+      else if (action === "refresh")
         root.service.refreshNow();
     }
   }
