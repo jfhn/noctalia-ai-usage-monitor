@@ -1,0 +1,22 @@
+{
+  "id": "ai-usage-monitor",
+  "name": "AI Usage Monitor",
+  "author": "local",
+  "description": "Shows Codex, OpenCode Go, and Claude Code usage in the Noctalia bar.",
+  "version": "0.1.0",
+  "entryPoints": {
+    "main": "Main.qml",
+    "barWidget": "BarWidget.qml",
+    "panel": "Panel.qml"
+  },
+  "metadata": {
+    "icon": "brain",
+    "defaultSettings": {
+      "refreshIntervalMs": 60000,
+      "staleAfterMs": 600000,
+      "timezone": "UTC",
+      "showCosts": true,
+      "showUsedOnlyProvidersInBar": true
+    }
+  }
+}

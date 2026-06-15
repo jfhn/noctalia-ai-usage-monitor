@@ -1,0 +1,19 @@
+.env
+.env.*
+*.log
+*.tmp
+*.bak
+
+node_modules/
+
+# Runtime output and local credentials/config copied into the repo by mistake.
+latest.json
+claude-rate-limits.json
+claude-oauth-usage.json
+opencode-go.json
+*.db
+*.sqlite
+*.jsonl
+*.pem
+*.key
+*.p12

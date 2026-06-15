@@ -1,0 +1,411 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import qs.Commons
+import qs.Widgets
+
+Item {
+  id: root
+
+  required property var pluginApi
+
+  readonly property var service: pluginApi ? pluginApi.mainInstance : null
+  property real contentPreferredWidth: Math.round(440 * Style.uiScaleRatio)
+  property real contentPreferredHeight: Math.min(760 * Style.uiScaleRatio, mainColumn.implicitHeight + Style.margin2L)
+  property bool allowAttach: true
+
+  function provider(id) {
+    return service ? service.providerById(id) : null;
+  }
+
+  function statusText(providerData) {
+    var state = providerStateText(providerData);
+    if (!providerData || providerData.available === false)
+      return state || "Unavailable";
+    if (providerData.stale)
+      return "Stale";
+    if (state)
+      return state;
+    return providerData.mode === "exact-remaining" && service ? service.representationTitle() + " quota" : "Unavailable";
+  }
+
+  function quotaWindows(providerData) {
+    if (!service || !providerData)
+      return [];
+    return service.quotaWindows(providerData);
+  }
+
+  function primaryWindow(providerData) {
+    if (!service || !providerData)
+      return null;
+    return service.primaryWindow(providerData);
+  }
+
+  function providerStateText(providerData) {
+    if (!service || !providerData)
+      return "";
+    return service.providerStateText(providerData);
+  }
+
+  function metricText(providerData) {
+    if (!service || !providerData || providerData.available === false)
+      return "n/a";
+    if (providerData.mode === "exact-remaining") {
+      var primary = primaryWindow(providerData);
+      if (!primary)
+        return "n/a";
+      return (primary.label || primary.id) + " " + service.displayPercentText(primary) + " " + service.representationName();
+    }
+    return "n/a";
+  }
+
+  function subMetricText(providerData) {
+    var state = providerStateText(providerData);
+    if (!service || !providerData || providerData.available === false) {
+      var reason = providerData && providerData.staleReason ? providerData.staleReason : "No local data";
+      return state ? state + " | " + reason : reason;
+    }
+    if (providerData.mode === "exact-remaining") {
+      var rows = quotaWindows(providerData);
+      if (rows.length === 0)
+        return "No quota windows";
+      var parts = [];
+      if (state && state !== "Statusline cache")
+        parts.push(state);
+      var primary = primaryWindow(providerData);
+      if (primary)
+        parts.push((primary.label || primary.id) + " reset " + (primary.resetAt ? service.formatTime(primary.resetAt) : "n/a"));
+      for (var i = 0; i < rows.length; i++) {
+        if (primary && rows[i].id === primary.id)
+          continue;
+        parts.push((rows[i].label || rows[i].id) + " " + service.displayPercentText(rows[i]));
+      }
+      return parts.join(" | ");
+    }
+    return "No quota data";
+  }
+
+  function windowDetailText(windowData) {
+    var parts = [service.displayPercentText(windowData) + " " + service.representationName()];
+    var alternateText = service.alternatePercentText(windowData);
+    if (alternateText !== "n/a")
+      parts.push(alternateText + " " + service.alternateRepresentationName());
+    if (windowData.resetAt)
+      parts.push("reset " + service.formatDateTime(windowData.resetAt));
+    return parts.join(" | ");
+  }
+
+  function appendProviderDetails(rows, id) {
+    var p = provider(id);
+    var providerLabel = p ? (p.label || id) : id;
+    if (!p || p.available === false)
+      return;
+
+    var windows = quotaWindows(p);
+    if (windows.length === 0)
+      return;
+
+    for (var j = 0; j < windows.length; j++) {
+      var windowData = windows[j];
+      rows.push({
+        label: providerLabel + " " + (windowData.label || windowData.id),
+        value: windowDetailText(windowData)
+      });
+    }
+  }
+
+  function detailRows() {
+    var rows = [
+      {
+        label: "Last refreshed",
+        value: service ? service.formatDateTime(service.lastUpdated) : "n/a"
+      }
+    ];
+    var ids = ["codex", "opencode-go", "claude"];
+    for (var i = 0; i < ids.length; i++)
+      appendProviderDetails(rows, ids[i]);
+    return rows;
+  }
+
+  function graphMax(providerData) {
+    if (!service || !providerData)
+      return 100;
+    if (providerData.mode === "exact-remaining")
+      return 100;
+    service.historyVersion;
+    return service.historyMax(providerData.id);
+  }
+
+  function clampPercent(value) {
+    if (value === null || value === undefined || isNaN(value))
+      return 0;
+    return Math.max(0, Math.min(100, value));
+  }
+
+  function displayPercent(providerData) {
+    var primary = primaryWindow(providerData);
+    if (!primary)
+      return 0;
+    return clampPercent(service ? service.displayPercent(primary) : 0);
+  }
+
+  Flickable {
+    id: flickable
+    anchors.fill: parent
+    clip: true
+    contentWidth: width
+    contentHeight: mainColumn.implicitHeight + Style.margin2L
+
+    ColumnLayout {
+      id: mainColumn
+      x: Style.marginL
+      y: Style.marginL
+      width: Math.max(0, flickable.width - Style.margin2L)
+      spacing: Style.marginM
+
+      NBox {
+        Layout.fillWidth: true
+        implicitHeight: headerRow.implicitHeight + Style.margin2M
+
+        RowLayout {
+          id: headerRow
+          anchors.fill: parent
+          anchors.margins: Style.marginM
+          spacing: Style.marginM
+
+          NIcon {
+            icon: "brain"
+            pointSize: Style.fontSizeXXL
+            color: Color.mPrimary
+          }
+
+          NText {
+            text: "AI Usage"
+            pointSize: Style.fontSizeL
+            font.weight: Style.fontWeightBold
+            color: Color.mOnSurface
+            Layout.fillWidth: true
+          }
+
+          NIconButton {
+            icon: "swap_horiz"
+            tooltipText: service ? "Show " + service.nextRepresentationName() : "Toggle used/remaining"
+            baseSize: Style.baseWidgetSize * 0.8
+            enabled: service !== null
+            onClicked: {
+              if (service)
+                service.flipRepresentation();
+            }
+          }
+
+          NIconButton {
+            icon: "refresh"
+            tooltipText: "Refresh now"
+            baseSize: Style.baseWidgetSize * 0.8
+            enabled: service ? !service.collectorRunning : false
+            onClicked: {
+              if (service)
+                service.refreshNow();
+            }
+          }
+
+          NIconButton {
+            icon: "close"
+            tooltipText: "Close"
+            baseSize: Style.baseWidgetSize * 0.8
+            onClicked: pluginApi.closePanel(pluginApi.panelOpenScreen || Quickshell.screens[0])
+          }
+        }
+      }
+
+      Repeater {
+        model: [
+          {
+            id: "codex",
+            color: Color.mPrimary
+          },
+          {
+            id: "opencode-go",
+            color: Color.mSecondary
+          },
+          {
+            id: "claude",
+            color: Color.mTertiary
+          }
+        ]
+
+        delegate: NBox {
+          id: card
+          required property var modelData
+          readonly property var providerData: root.provider(modelData.id)
+
+          Layout.fillWidth: true
+          Layout.preferredHeight: Math.round(116 * Style.uiScaleRatio)
+
+          ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Style.marginS
+            anchors.bottomMargin: Style.radiusM * 0.5
+            spacing: Style.marginXS
+
+            RowLayout {
+              Layout.fillWidth: true
+              spacing: Style.marginXS
+
+              ColumnLayout {
+                spacing: 0
+                Layout.fillWidth: true
+
+                NText {
+                  text: root.metricText(card.providerData)
+                  pointSize: Style.fontSizeS
+                  font.weight: Style.fontWeightSemiBold
+                  color: card.modelData.color
+                  family: Settings.data.ui.fontFixed
+                }
+
+                NText {
+                  text: root.subMetricText(card.providerData)
+                  pointSize: Style.fontSizeXS
+                  color: Color.mOnSurfaceVariant
+                  elide: Text.ElideRight
+                  Layout.fillWidth: true
+                }
+              }
+
+              NText {
+                text: card.providerData ? card.providerData.label : card.modelData.id
+                pointSize: Style.fontSizeXS
+                color: Color.mOnSurfaceVariant
+                horizontalAlignment: Text.AlignRight
+                Layout.alignment: Qt.AlignTop
+              }
+            }
+
+            Item {
+              id: usageBarSlot
+
+              readonly property real displayPercent: root.displayPercent(card.providerData)
+
+              Layout.fillWidth: true
+              Layout.fillHeight: true
+              Layout.minimumHeight: Math.round(18 * Style.uiScaleRatio)
+
+              Rectangle {
+                id: usageBarTrack
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Math.max(8, Math.round(14 * Style.uiScaleRatio))
+                radius: Math.round(height / 2)
+                color: card.modelData.color
+                opacity: 0.16
+              }
+
+              Rectangle {
+                anchors.left: usageBarTrack.left
+                anchors.verticalCenter: usageBarTrack.verticalCenter
+                width: Math.round(usageBarTrack.width * usageBarSlot.displayPercent / 100)
+                height: usageBarTrack.height
+                radius: usageBarTrack.radius
+                color: card.modelData.color
+                visible: width > 0
+
+                Behavior on width {
+                  NumberAnimation {
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                  }
+                }
+              }
+            }
+
+            RowLayout {
+              Layout.fillWidth: true
+
+              NText {
+                text: root.statusText(card.providerData)
+                pointSize: Style.fontSizeXS
+                color: card.providerData && card.providerData.stale ? Color.mTertiary : Color.mOnSurfaceVariant
+              }
+
+              Item {
+                Layout.fillWidth: true
+              }
+
+              NText {
+                text: card.providerData ? card.providerData.source : ""
+                pointSize: Style.fontSizeXS
+                color: Color.mOnSurfaceVariant
+                elide: Text.ElideLeft
+                horizontalAlignment: Text.AlignRight
+                Layout.maximumWidth: Math.round(root.contentPreferredWidth * 0.45)
+              }
+            }
+          }
+        }
+      }
+
+      NBox {
+        Layout.fillWidth: true
+        implicitHeight: detailsColumn.implicitHeight + Style.margin2M
+
+        ColumnLayout {
+          id: detailsColumn
+          anchors.fill: parent
+          anchors.margins: Style.marginM
+          spacing: Style.marginXS
+
+          NText {
+            text: "Details"
+            pointSize: Style.fontSizeM
+            font.weight: Style.fontWeightSemiBold
+            color: Color.mOnSurface
+          }
+
+          Repeater {
+            model: {
+              if (service) {
+                service.providers;
+                service.lastUpdated;
+              }
+              return root.detailRows();
+            }
+
+            delegate: DetailRow {
+              required property var modelData
+              label: modelData.label
+              value: modelData.value
+            }
+          }
+        }
+      }
+    }
+  }
+
+  component DetailRow: RowLayout {
+    property string label: ""
+    property string value: ""
+
+    Layout.fillWidth: true
+    spacing: Style.marginM
+
+    NText {
+      text: label
+      pointSize: Style.fontSizeXS
+      color: Color.mOnSurfaceVariant
+      Layout.fillWidth: true
+    }
+
+    NText {
+      text: value
+      pointSize: Style.fontSizeXS
+      color: Color.mOnSurface
+      family: Settings.data.ui.fontFixed
+      horizontalAlignment: Text.AlignRight
+      wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+      Layout.maximumWidth: Math.round(root.contentPreferredWidth * 0.48)
+    }
+  }
+}
