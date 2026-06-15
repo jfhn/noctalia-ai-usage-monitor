@@ -21,6 +21,7 @@ Main.qml
 BarWidget.qml
 Panel.qml
 scripts/ai-usage-collector
+scripts/ai-usage-collector.js
 ```
 
 Runtime cache files are written under:
@@ -126,11 +127,13 @@ Failures are cooled down and reported in the UI as timeout, rate-limit, auth, or
 
 ## Collector
 
-The collector is:
+The collector entrypoint is:
 
 ```bash
 scripts/ai-usage-collector
 ```
+
+The executable shell wrapper prepares the cache paths, timezone, and optional `nvm` environment, then runs the Node implementation in `scripts/ai-usage-collector.js`.
 
 It:
 
@@ -153,6 +156,7 @@ Useful checks:
 
 ```bash
 bash -n scripts/ai-usage-collector
+node --check scripts/ai-usage-collector.js
 scripts/ai-usage-collector | jq .
 jq . manifest.json
 jq . ~/.cache/noctalia-ai-usage/latest.json
