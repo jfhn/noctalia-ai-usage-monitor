@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
+import qs.Services.UI
 import qs.Widgets
 
 Item {
@@ -121,10 +122,36 @@ Item {
         value: service ? service.formatDateTime(service.lastUpdated) : "n/a"
       }
     ];
-    var ids = ["codex", "opencode-go", "claude"];
+    var ids = service ? service.enabledProviderIds() : [];
     for (var i = 0; i < ids.length; i++)
       appendProviderDetails(rows, ids[i]);
     return rows;
+  }
+
+  function providerCards() {
+    var cards = [];
+    if (!service)
+      return cards;
+    service.settingsVersion;
+    if (service.isProviderEnabled("codex")) {
+      cards.push({
+        id: "codex",
+        color: Color.mPrimary
+      });
+    }
+    if (service.isProviderEnabled("opencode-go")) {
+      cards.push({
+        id: "opencode-go",
+        color: Color.mSecondary
+      });
+    }
+    if (service.isProviderEnabled("claude")) {
+      cards.push({
+        id: "claude",
+        color: Color.mTertiary
+      });
+    }
+    return cards;
   }
 
   function graphMax(providerData) {
@@ -188,7 +215,25 @@ Item {
           }
 
           NIconButton {
-            icon: "swap_horiz"
+            icon: service && service.isCompactMode() ? "arrows-maximize" : "arrows-minimize"
+            tooltipText: service && service.isCompactMode() ? "Detailed bar" : "Compact bar"
+            baseSize: Style.baseWidgetSize * 0.8
+            enabled: service !== null
+            onClicked: {
+              if (service)
+                service.toggleCompactMode();
+            }
+          }
+
+          NIconButton {
+            icon: "settings"
+            tooltipText: "Settings"
+            baseSize: Style.baseWidgetSize * 0.8
+            onClicked: BarService.openPluginSettings(pluginApi.panelOpenScreen || Quickshell.screens[0], pluginApi.manifest)
+          }
+
+          NIconButton {
+            icon: "arrows-exchange"
             tooltipText: service ? "Show " + service.nextRepresentationName() : "Toggle used/remaining"
             baseSize: Style.baseWidgetSize * 0.8
             enabled: service !== null
@@ -219,20 +264,7 @@ Item {
       }
 
       Repeater {
-        model: [
-          {
-            id: "codex",
-            color: Color.mPrimary
-          },
-          {
-            id: "opencode-go",
-            color: Color.mSecondary
-          },
-          {
-            id: "claude",
-            color: Color.mTertiary
-          }
-        ]
+        model: root.providerCards()
 
         delegate: NBox {
           id: card
@@ -369,6 +401,7 @@ Item {
               if (service) {
                 service.providers;
                 service.lastUpdated;
+                service.settingsVersion;
               }
               return root.detailRows();
             }

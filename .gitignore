@@ -3,6 +3,7 @@
 *.log
 *.tmp
 *.bak
+settings.json
 
 node_modules/
 

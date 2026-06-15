@@ -11,6 +11,19 @@ const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
 const now = Date.now();
 const CLAUDE_OAUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const CLAUDE_OAUTH_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+const ALL_PROVIDER_IDS = ["codex", "opencode-go", "claude"];
+
+function enabledProviderSet() {
+  const raw = process.env.AI_USAGE_ENABLED_PROVIDERS;
+  if (raw === undefined) return new Set(ALL_PROVIDER_IDS);
+  return new Set(String(raw).split(",").map(value => value.trim()).filter(Boolean));
+}
+
+const enabledProviders = enabledProviderSet();
+
+function isProviderEnabled(id) {
+  return enabledProviders.has(id);
+}
 
 function readJsonFile(filePath) {
   if (!filePath) return null;
@@ -809,11 +822,10 @@ async function opencodeGoProvider() {
 }
 
 async function main() {
-  const providers = [
-    codexProvider(),
-    await opencodeGoProvider(),
-    await claudeProvider()
-  ];
+  const providers = [];
+  if (isProviderEnabled("codex")) providers.push(codexProvider());
+  if (isProviderEnabled("opencode-go")) providers.push(await opencodeGoProvider());
+  if (isProviderEnabled("claude")) providers.push(await claudeProvider());
 
   const staleProviders = providers.filter(provider => provider.stale);
   const result = {
