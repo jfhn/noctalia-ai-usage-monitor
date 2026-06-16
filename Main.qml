@@ -19,6 +19,7 @@ Item {
   property bool collectorRunning: false
   property var activeCollectorProcess: null
   property double collectorStartedAt: 0
+  property int refreshVersion: 0
   property string representationMode: "remaining"
   property int settingsVersion: 0
 
@@ -63,6 +64,25 @@ Item {
   function isProviderEnabled(id) {
     var settings = providerSettings();
     return settings[id] !== false;
+  }
+
+  function barWindowSettings() {
+    if (!pluginApi || !pluginApi.pluginSettings || !pluginApi.pluginSettings.barWindows)
+      return {};
+    return pluginApi.pluginSettings.barWindows;
+  }
+
+  function isBarWindowEnabled(id) {
+    var settings = barWindowSettings();
+    return settings[id] !== false;
+  }
+
+  function anyBarWindowEnabled() {
+    return isBarWindowEnabled("five_hour") || isBarWindowEnabled("weekly") || isBarWindowEnabled("monthly");
+  }
+
+  function useShortBarResetTime() {
+    return pluginApi && pluginApi.pluginSettings && pluginApi.pluginSettings.shortBarResetTime === true;
   }
 
   function enabledProviderIds() {
@@ -112,6 +132,7 @@ Item {
       lastUpdated = new Date().toISOString();
       isStale = false;
       staleReason = "";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
       return false;
@@ -158,6 +179,7 @@ Item {
 
     isStale = true;
     staleReason = reason || "collector stopped";
+    refreshVersion++;
     rebuildSummary();
     rebuildTooltipRows();
   }
@@ -166,6 +188,7 @@ Item {
     if (exitCode !== 0 || text.trim() === "") {
       isStale = true;
       staleReason = exitCode !== 0 ? "collector exited " + exitCode : "collector returned no data";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
       return;
@@ -179,11 +202,13 @@ Item {
       isStale = data.stale === true || ageStale;
       staleReason = data.staleReason || (ageStale ? "data is older than " + Math.round(staleAfterMs / 60000) + " minutes" : "");
       appendHistory(providers);
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
     } catch (e) {
       isStale = true;
       staleReason = "collector JSON parse failed";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
     }
@@ -418,6 +443,16 @@ Item {
     return rows;
   }
 
+  function barQuotaWindows(provider) {
+    var rows = quotaWindows(provider);
+    var visibleRows = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (isBarWindowEnabled(rows[i].id))
+        visibleRows.push(rows[i]);
+    }
+    return visibleRows;
+  }
+
   function primaryWindow(provider) {
     var rows = quotaWindows(provider);
     for (var i = 0; i < rows.length; i++) {
@@ -468,12 +503,36 @@ Item {
     return days + "d";
   }
 
+  function formatResetRemainingCoarse(value) {
+    if (!value)
+      return "";
+    var reset = new Date(value);
+    if (isNaN(reset.getTime()))
+      return "";
+    var minutes = Math.max(0, Math.ceil((reset.getTime() - Date.now()) / 60000));
+    if (minutes < 60)
+      return minutes + "m";
+
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24)
+      return hours + "h";
+
+    return Math.floor(hours / 24) + "d";
+  }
+
+  function barResetRemaining(value) {
+    return useShortBarResetTime() ? formatResetRemainingCoarse(value) : formatResetRemaining(value);
+  }
+
   function barWindowText(windowData, includeLabel) {
     var text = "";
     if (includeLabel)
       text += (windowData.label || windowData.id) + ":";
-    text += displayPercentText(windowData);
-    var reset = formatResetRemaining(windowData.resetAt);
+    if (displayPercent(windowData) >= 100)
+      text += "full";
+    else
+      text += displayPercentText(windowData);
+    var reset = barResetRemaining(windowData.resetAt);
     if (reset !== "")
       text += ":" + reset;
     return text;
@@ -495,14 +554,16 @@ Item {
   }
 
   function compactBarFor(provider, shortLabel) {
+    if ((!provider || provider.available === false) && !anyBarWindowEnabled())
+      return "";
     if (!provider || provider.available === false)
       return shortLabel + " " + compactStateText(provider);
 
     var label = shortLabel + (provider.stale ? "*" : "");
     if (provider.mode === "exact-remaining") {
-      var rows = quotaWindows(provider);
+      var rows = barQuotaWindows(provider);
       if (rows.length === 0)
-        return label + " n/a";
+        return "";
       var values = [];
       for (var i = 0; i < rows.length; i++)
         values.push(barWindowText(rows[i], false));
@@ -517,6 +578,8 @@ Item {
   }
 
   function detailedBarFor(provider, shortLabel) {
+    if ((!provider || provider.available === false) && !anyBarWindowEnabled())
+      return "";
     if (!provider || provider.available === false) {
       var unavailableState = providerStateText(provider);
       return shortLabel + " " + (unavailableState || "n/a");
@@ -524,9 +587,9 @@ Item {
 
     var label = shortLabel + (provider.stale ? "*" : "");
     if (provider.mode === "exact-remaining") {
-      var rows = quotaWindows(provider);
+      var rows = barQuotaWindows(provider);
       if (rows.length === 0)
-        return label + " n/a";
+        return "";
       var values = [];
       for (var i = 0; i < rows.length; i++)
         values.push(barWindowText(rows[i], true));
@@ -544,17 +607,22 @@ Item {
     return isCompactMode() ? compactBarFor(provider, compactLabel) : detailedBarFor(provider, detailedLabel);
   }
 
+  function appendBarPart(parts, text) {
+    if (text && String(text).trim() !== "")
+      parts.push(text);
+  }
+
   function rebuildSummary() {
     var parts = [];
     if (pluginApi.pluginSettings.showUsedOnlyProvidersInBar !== false) {
       if (isProviderEnabled("codex"))
-        parts.push(barTextFor(providerById("codex"), "Codex", "Cx"));
+        appendBarPart(parts, barTextFor(providerById("codex"), "Codex", "Cx"));
       if (isProviderEnabled("opencode-go"))
-        parts.push(barTextFor(providerById("opencode-go"), "Go", "Go"));
+        appendBarPart(parts, barTextFor(providerById("opencode-go"), "Go", "Go"));
     }
     if (isProviderEnabled("claude"))
-      parts.push(barTextFor(providerById("claude"), "Claude", "Cl"));
-    summaryText = parts.length > 0 ? parts.join(" · ") : "AI Usage off";
+      appendBarPart(parts, barTextFor(providerById("claude"), "Claude", "Cl"));
+    summaryText = parts.length > 0 ? parts.join(isCompactMode() ? "·" : " · ") : (enabledProviderIds().length > 0 ? "AI Usage" : "AI Usage off");
   }
 
   function providerTooltipValue(provider) {
@@ -568,7 +636,7 @@ Item {
     var state = providerStateText(provider);
     if (state)
       mode = state;
-    if (provider.stale)
+    if (provider.stale && !provider.failureKind)
       mode = "Stale";
 
     if (provider.mode === "exact-remaining") {
