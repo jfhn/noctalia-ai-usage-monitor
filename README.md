@@ -138,7 +138,7 @@ Cursor usage is read from local Cursor authentication and Cursor usage endpoints
 
 The collector reads `cursorAuth/accessToken` from Cursor's SQLite state database using `sqlite3`, with a Python `sqlite3` fallback when available. It then queries Cursor's current-period usage endpoint and falls back to the usage-summary or legacy request-count endpoint when needed.
 
-Cursor is shown as a billing-cycle quota window with reset time from Cursor's billing-cycle end. Successful responses are cached briefly in:
+Cursor is shown as separate `Auto + Composer` and `API` billing-cycle quota windows when Cursor reports split usage percentages. Older or partial responses fall back to a single `Cycle` window. Successful responses are cached briefly in:
 
 ```text
 ~/.cache/noctalia-ai-usage/cursor-usage.json
