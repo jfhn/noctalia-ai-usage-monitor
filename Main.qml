@@ -11,7 +11,7 @@ Item {
   property var providers: []
   property var historyByProvider: ({})
   property int historyVersion: 0
-  property string summaryText: "Codex n/a Go n/a Claude n/a"
+  property string summaryText: "Codex n/a Go n/a Claude n/a Cursor n/a"
   property var tooltipRows: [["AI Usage", "Waiting for first refresh"]]
   property string lastUpdated: ""
   property bool isStale: false
@@ -93,6 +93,8 @@ Item {
       ids.push("opencode-go");
     if (isProviderEnabled("claude"))
       ids.push("claude");
+    if (isProviderEnabled("cursor"))
+      ids.push("cursor");
     return ids;
   }
 
@@ -389,8 +391,6 @@ Item {
       return "Auth required";
     if (provider.cacheStatus === "stale-cache")
       return "Stale cache";
-    if (provider.cacheStatus === "cached")
-      return "Cached";
     if (provider.cacheStatus === "statusline-cache")
       return "Statusline cache";
     return "";
@@ -622,6 +622,8 @@ Item {
     }
     if (isProviderEnabled("claude"))
       appendBarPart(parts, barTextFor(providerById("claude"), "Claude", "Cl"));
+    if (isProviderEnabled("cursor"))
+      appendBarPart(parts, barTextFor(providerById("cursor"), "Cursor", "Cu"));
     summaryText = parts.length > 0 ? parts.join(isCompactMode() ? "·" : " · ") : (enabledProviderIds().length > 0 ? "AI Usage" : "AI Usage off");
   }
 

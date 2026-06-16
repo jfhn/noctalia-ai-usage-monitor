@@ -1,19 +1,24 @@
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const { pathToFileURL } = require("url");
 
 const latestFile = process.env.LATEST_FILE;
 const claudeFile = process.env.CLAUDE_FILE;
 const claudeOauthFile = process.env.CLAUDE_OAUTH_FILE;
+const cursorFile = process.env.CURSOR_FILE;
 const updatedAt = process.env.UPDATED_AT;
 const home = process.env.HOME || "";
 const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
 const now = Date.now();
 const CLAUDE_OAUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const CLAUDE_OAUTH_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+const CURSOR_USAGE_CACHE_TTL_MS = 5 * 60 * 1000;
+const CURSOR_USAGE_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+const CURSOR_USAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CLAUDE_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CODEX_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const ALL_PROVIDER_IDS = ["codex", "opencode-go", "claude"];
+const ALL_PROVIDER_IDS = ["codex", "opencode-go", "claude", "cursor"];
 
 function enabledProviderSet() {
   const raw = process.env.AI_USAGE_ENABLED_PROVIDERS;
@@ -74,6 +79,7 @@ function safeReason(value, fallback = "Unavailable") {
   const text = str(value) || fallback;
   return text
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "[redacted credential]")
+    .replace(/WorkosCursorSessionToken=([^;\s]+)/gi, "WorkosCursorSessionToken=[redacted]")
     .replace(/auth=([^;\s]+)/gi, "auth=[redacted]")
     .replace(/(accessToken|refreshToken|authCookie|Authorization|Cookie)["':=\s]+[^,\s}]+/gi, "credential=[redacted]")
     .replace(/\s+/g, " ")
@@ -639,6 +645,620 @@ async function claudeProvider() {
   });
 }
 
+function cursorBase(staleReason) {
+  return {
+    id: "cursor",
+    label: "Cursor",
+    mode: "quota-unavailable",
+    period: "billing-cycle",
+    usedPercent: null,
+    remainingPercent: null,
+    weeklyRemainingPercent: null,
+    monthlyRemainingPercent: null,
+    resetAt: null,
+    weeklyResetAt: null,
+    monthlyResetAt: null,
+    windows: [],
+    source: "Cursor usage endpoint",
+    available: false,
+    stale: false,
+    staleReason
+  };
+}
+
+function cursorSupportDir() {
+  const configured = str(process.env.CURSOR_CONFIG_DIR);
+  if (configured) return configured;
+  if (process.platform === "darwin") {
+    return path.join(home, "Library", "Application Support", "Cursor");
+  }
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "Cursor");
+  }
+  return path.join(configHome, "Cursor");
+}
+
+function cursorDbPath() {
+  return str(process.env.CURSOR_DB_PATH) || path.join(cursorSupportDir(), "User", "globalStorage", "state.vscdb");
+}
+
+function cursorUserIdPaths() {
+  const root = cursorSupportDir();
+  return [
+    path.join(root, "sentry", "scope_v3.json"),
+    path.join(root, "sentry", "session.json"),
+    path.join(root, "User", "globalStorage", "storage.json"),
+    path.join(root, "storage.json"),
+    path.join(home, ".cursor", "storage.json")
+  ];
+}
+
+function findCursorUserIdInValue(value) {
+  if (typeof value === "string") {
+    const match = value.match(/user_[A-Za-z0-9]{20,}/);
+    return match ? match[0] : null;
+  }
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findCursorUserIdInValue(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const key of Object.keys(value)) {
+    const found = findCursorUserIdInValue(value[key]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findCursorUserIdInText(text) {
+  const match = String(text || "").match(/user_[A-Za-z0-9]{20,}/);
+  return match ? match[0] : null;
+}
+
+function findCursorUserIdInFile(filePath) {
+  let text;
+  try {
+    text = fs.readFileSync(filePath, "utf8");
+  } catch (_) {
+    return null;
+  }
+
+  try {
+    const found = findCursorUserIdInValue(JSON.parse(text));
+    if (found) return found;
+  } catch (_) {}
+  return findCursorUserIdInText(text);
+}
+
+function findCursorUserIdInDirectory(dirPath, depth) {
+  if (depth < 0) return null;
+  let entries;
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch (_) {
+    return null;
+  }
+
+  for (const entry of entries) {
+    const filePath = path.join(dirPath, entry.name);
+    if (entry.isFile() && (entry.name.endsWith(".json") || entry.name === "storage.json")) {
+      const found = findCursorUserIdInFile(filePath);
+      if (found) return found;
+    } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+      const found = findCursorUserIdInDirectory(filePath, depth - 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function cursorUserIdFromLocalStorage() {
+  const configured = str(process.env.CURSOR_USER_ID);
+  if (configured) return configured;
+
+  for (const filePath of cursorUserIdPaths()) {
+    const found = findCursorUserIdInFile(filePath);
+    if (found) return found;
+
+    const dirPath = path.dirname(filePath);
+    const fromDir = findCursorUserIdInDirectory(dirPath, 1);
+    if (fromDir) return fromDir;
+  }
+  return null;
+}
+
+function base64UrlJson(part) {
+  if (!part) return null;
+  try {
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function cursorUserIdFromAccessToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+  return findCursorUserIdInValue(base64UrlJson(parts[1]));
+}
+
+function readCursorAccessTokenWithSqlite(dbPath) {
+  const query = "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1;";
+  for (const args of [["-readonly", dbPath, query], [dbPath, query]]) {
+    try {
+      const value = execFileSync("sqlite3", args, {
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+        timeout: 5000
+      }).trim();
+      if (value) return value;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function readCursorAccessTokenWithPython(dbPath) {
+  const query = [
+    "import sqlite3, sys",
+    "conn = sqlite3.connect(sys.argv[1])",
+    "cur = conn.cursor()",
+    "cur.execute(\"SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1\")",
+    "row = cur.fetchone()",
+    "print(row[0] if row and row[0] else '')",
+    "conn.close()"
+  ].join("; ");
+  const commands = process.platform === "win32" ? ["python", "py", "python3"] : ["python3", "python"];
+  for (const command of commands) {
+    try {
+      const value = execFileSync(command, ["-c", query, dbPath], {
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+        timeout: 5000
+      }).trim();
+      if (value) return value;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function cursorAccessTokenFromDb() {
+  const configured = str(process.env.CURSOR_ACCESS_TOKEN);
+  if (configured) return { token: configured, reason: null };
+
+  const dbPath = cursorDbPath();
+  if (!fs.existsSync(dbPath)) {
+    return { token: null, reason: `Cursor auth database not found at ${dbPath}` };
+  }
+
+  const token = readCursorAccessTokenWithSqlite(dbPath) || readCursorAccessTokenWithPython(dbPath);
+  if (!token) {
+    return {
+      token: null,
+      reason: "Cursor access token not found in local state.vscdb; sign in to Cursor or install sqlite3/python"
+    };
+  }
+  return { token, reason: null };
+}
+
+function parseCursorSessionCookie(cookieHeader) {
+  const match = String(cookieHeader || "").match(/WorkosCursorSessionToken=([^;\s]+)/i);
+  if (!match) return { userId: null, token: null };
+
+  let value = match[1];
+  try {
+    value = decodeURIComponent(value);
+  } catch (_) {}
+
+  const separator = value.indexOf("::");
+  if (separator === -1) return { userId: null, token: null };
+  const userId = value.slice(0, separator);
+  const token = value.slice(separator + 2);
+  return {
+    userId: userId.startsWith("user_") ? userId : null,
+    token: token || null
+  };
+}
+
+function buildCursorSessionCookie(userId, token) {
+  return `WorkosCursorSessionToken=${encodeURIComponent(`${userId}::${token}`)}`;
+}
+
+function cursorAuthCredentials() {
+  const configuredCookie = str(process.env.CURSOR_COOKIE_HEADER) || str(process.env.CURSOR_SESSION_COOKIE);
+  const parsedCookie = parseCursorSessionCookie(configuredCookie);
+
+  const tokenResult = parsedCookie.token
+    ? { token: parsedCookie.token, reason: null }
+    : cursorAccessTokenFromDb();
+  const token = tokenResult.token;
+  if (!token) return { userId: null, token: null, cookie: null, reason: tokenResult.reason };
+
+  const userId = parsedCookie.userId
+    || cursorUserIdFromLocalStorage()
+    || cursorUserIdFromAccessToken(token);
+  if (!userId) {
+    return {
+      userId: null,
+      token: null,
+      cookie: null,
+      reason: "Cursor user id not found in local Cursor storage; start Cursor after signing in"
+    };
+  }
+
+  return {
+    userId,
+    token,
+    cookie: configuredCookie || buildCursorSessionCookie(userId, token),
+    reason: null
+  };
+}
+
+async function fetchCursorJson(name, url, options) {
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined
+    });
+    const text = await response.text();
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, reason: "auth", error: `${name} rejected Cursor credentials with HTTP ${response.status}` };
+    }
+    if (response.status === 429) {
+      return { ok: false, reason: "rate-limited", error: `${name} returned HTTP 429` };
+    }
+    if (!response.ok) {
+      return { ok: false, reason: "http", error: `${name} returned HTTP ${response.status}: ${text.slice(0, 160)}` };
+    }
+    try {
+      return { ok: true, data: JSON.parse(text) };
+    } catch (err) {
+      return { ok: false, reason: "parse", error: safeReason(err && err.message, `${name} returned invalid JSON`) };
+    }
+  } catch (err) {
+    const timeout = err && (err.name === "AbortError" || err.name === "TimeoutError");
+    return {
+      ok: false,
+      reason: timeout ? "timeout" : "network",
+      error: safeReason(timeout ? `${name} timed out` : err && err.message, `${name} failed`)
+    };
+  }
+}
+
+function fetchCursorCurrentPeriodUsage(token) {
+  return fetchCursorJson(
+    "Cursor current period usage endpoint",
+    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Connect-Protocol-Version": "1",
+        "Content-Type": "application/json"
+      },
+      body: "{}"
+    }
+  );
+}
+
+function fetchCursorUsageSummary(cookie) {
+  return fetchCursorJson(
+    "Cursor usage summary endpoint",
+    "https://cursor.com/api/usage-summary",
+    {
+      method: "GET",
+      headers: {
+        Cookie: cookie,
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
+function fetchCursorLegacyUsage(userId, cookie) {
+  return fetchCursorJson(
+    "Cursor legacy usage endpoint",
+    `https://cursor.com/api/usage?user=${encodeURIComponent(userId)}`,
+    {
+      method: "GET",
+      headers: {
+        Cookie: cookie,
+        Accept: "application/json"
+      }
+    }
+  );
+}
+
+function cursorPlanUsagePercent(planUsage) {
+  const explicit = firstNumber(planUsage, ["totalPercentUsed", "used_percent", "usedPercent", "usagePercent"]);
+  if (explicit !== null) return explicit;
+
+  const limit = firstNumber(planUsage, ["limit", "max", "maxRequestUsage"]);
+  const used = firstNumber(planUsage, ["used", "numRequests"]);
+  const remaining = firstNumber(planUsage, ["remaining"]);
+  if (limit !== null && limit > 0 && used !== null) return (used / limit) * 100;
+  if (limit !== null && limit > 0 && remaining !== null) return ((limit - remaining) / limit) * 100;
+  return null;
+}
+
+function cursorCycleWindow(usedPercent, resetAt) {
+  return makeQuotaWindow("monthly", "Cycle", normalizeWindow({
+    usedPercent,
+    resetAt
+  }));
+}
+
+function cursorProviderFromPlanUsage(planUsage, cycleEnd, source, staleReason, cachedAt, planType) {
+  const base = {
+    ...cursorBase(staleReason),
+    mode: "exact-remaining",
+    source,
+    cacheUpdatedAt: cachedAt,
+    planType: planType || null
+  };
+  const usedPercent = cursorPlanUsagePercent(planUsage);
+  const windowData = cursorCycleWindow(usedPercent, normalizeTimestamp(cycleEnd));
+  if (!windowData) return base;
+
+  const cachedMs = cachedAt ? Date.parse(cachedAt) : NaN;
+  const stale = Number.isFinite(cachedMs)
+    && !hasFutureReset([windowData])
+    && now - cachedMs > CURSOR_USAGE_MAX_AGE_MS;
+
+  return {
+    ...base,
+    usedPercent: windowData.usedPercent,
+    remainingPercent: windowData.remainingPercent,
+    weeklyRemainingPercent: null,
+    monthlyRemainingPercent: windowData.remainingPercent,
+    resetAt: windowData.resetAt,
+    weeklyResetAt: null,
+    monthlyResetAt: windowData.resetAt,
+    windows: [windowData],
+    available: true,
+    stale,
+    staleReason: stale ? `${source} data is older than 24 hours and has no active billing-cycle reset` : null,
+    billingCycleStart: normalizeTimestamp(planUsage && planUsage.billingCycleStart),
+    billingCycleEnd: normalizeTimestamp(cycleEnd),
+    autoUsedPercent: firstNumber(planUsage, ["autoPercentUsed"]),
+    apiUsedPercent: firstNumber(planUsage, ["apiPercentUsed"]),
+    limitCents: firstNumber(planUsage, ["limit"]),
+    remainingCents: firstNumber(planUsage, ["remaining"])
+  };
+}
+
+function cursorProviderFromCurrentUsage(data, cachedAt, summary) {
+  const planType = firstString(summary, ["membershipType", "planType"]);
+  return cursorProviderFromPlanUsage(
+    data && data.planUsage,
+    data && data.billingCycleEnd,
+    "Cursor current period usage endpoint",
+    "Cursor current period usage endpoint returned no plan usage",
+    cachedAt,
+    planType
+  );
+}
+
+function cursorProviderFromUsageSummary(data, cachedAt) {
+  const individualPlan = data && data.individualUsage && data.individualUsage.plan;
+  return cursorProviderFromPlanUsage(
+    individualPlan,
+    data && data.billingCycleEnd,
+    "Cursor usage summary endpoint",
+    "Cursor usage summary endpoint returned no plan usage",
+    cachedAt,
+    firstString(data, ["membershipType", "planType"])
+  );
+}
+
+function cursorLegacyModelUsage(data) {
+  if (!data || typeof data !== "object") return null;
+  if (data["gpt-4"] && num(data["gpt-4"].maxRequestUsage) !== null) return data["gpt-4"];
+  for (const key of Object.keys(data)) {
+    if (key === "startOfMonth") continue;
+    const item = data[key];
+    if (item && typeof item === "object" && num(item.maxRequestUsage) !== null) return item;
+  }
+  return null;
+}
+
+function addUtcMonth(value) {
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return null;
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds()
+  )).toISOString();
+}
+
+function cursorProviderFromLegacyUsage(data, cachedAt) {
+  const usage = cursorLegacyModelUsage(data);
+  const maxRequests = num(usage && usage.maxRequestUsage);
+  const usedRequests = num(usage && usage.numRequests);
+  if (maxRequests === null || maxRequests <= 0 || usedRequests === null) {
+    return cursorBase("Cursor legacy usage endpoint returned no request quota");
+  }
+
+  const cycleEnd = addUtcMonth(data.startOfMonth);
+  return cursorProviderFromPlanUsage(
+    {
+      used: usedRequests,
+      limit: maxRequests
+    },
+    cycleEnd,
+    "Cursor legacy usage endpoint",
+    null,
+    cachedAt,
+    "legacy"
+  );
+}
+
+function readCursorProviderCache() {
+  const data = readJsonFile(cursorFile);
+  if (!data) {
+    return { provider: null, cachedAt: null, ageMs: Infinity, errorAgeMs: Infinity, errorReason: null };
+  }
+
+  const cachedAt = normalizeTimestamp(data.updatedAt);
+  const cachedMs = cachedAt ? Date.parse(cachedAt) : NaN;
+  const errorAt = normalizeTimestamp(data.lastErrorAt);
+  const errorMs = errorAt ? Date.parse(errorAt) : NaN;
+  return {
+    provider: data.provider || null,
+    cachedAt,
+    ageMs: Number.isFinite(cachedMs) ? now - cachedMs : Infinity,
+    errorAgeMs: Number.isFinite(errorMs) ? now - errorMs : Infinity,
+    errorReason: str(data.lastErrorReason)
+  };
+}
+
+function writeCursorProviderCache(provider) {
+  if (!cursorFile || !provider || provider.available === false) return;
+  const cachedProvider = {
+    ...provider,
+    cacheStatus: null,
+    cacheAgeSeconds: null,
+    retryAfterSeconds: null,
+    failureKind: null
+  };
+  try {
+    fs.writeFileSync(cursorFile, JSON.stringify({
+      updatedAt,
+      provider: cachedProvider
+    }, null, 2) + "\n", { mode: 0o600 });
+  } catch (_) {}
+}
+
+function writeCursorUsageError(reason) {
+  const existing = readJsonFile(cursorFile) || {};
+  try {
+    fs.writeFileSync(cursorFile, JSON.stringify({
+      updatedAt: existing.updatedAt || null,
+      provider: existing.provider || null,
+      lastErrorAt: updatedAt,
+      lastErrorReason: safeReason(reason, "Cursor usage endpoint unavailable")
+    }, null, 2) + "\n", { mode: 0o600 });
+  } catch (_) {}
+}
+
+function cursorFailureKind(reason) {
+  const text = String(reason || "").toLowerCase();
+  if (text.includes("timed out") || text.includes("timeout")) return "timeout";
+  if (text.includes("429") || text.includes("rate")) return "rate-limited";
+  if (text.includes("credential") || text.includes("token") || text.includes("unauthorized") || text.includes("401") || text.includes("403")) return "auth";
+  return reason ? "error" : null;
+}
+
+function withCursorCacheState(provider, state) {
+  return {
+    ...provider,
+    cacheStatus: state.cacheStatus || null,
+    cacheUpdatedAt: state.cacheUpdatedAt !== undefined ? state.cacheUpdatedAt : provider.cacheUpdatedAt,
+    cacheAgeSeconds: state.cacheAgeSeconds !== undefined ? state.cacheAgeSeconds : null,
+    retryAfterSeconds: state.retryAfterSeconds !== undefined ? state.retryAfterSeconds : null,
+    failureKind: state.failureKind || null
+  };
+}
+
+function cursorStaleCacheProvider(cache, reason) {
+  return withCursorCacheState({
+    ...cache.provider,
+    stale: true,
+    staleReason: safeReason(reason, "Cursor usage endpoint unavailable")
+  }, {
+    cacheStatus: "stale-cache",
+    cacheUpdatedAt: cache.cachedAt,
+    cacheAgeSeconds: ageSeconds(cache.ageMs),
+    failureKind: cursorFailureKind(reason)
+  });
+}
+
+async function cursorProvider() {
+  const cache = readCursorProviderCache();
+  if (cache.provider && cache.ageMs <= CURSOR_USAGE_CACHE_TTL_MS) {
+    return withCursorCacheState(cache.provider, {
+      cacheStatus: "cached",
+      cacheUpdatedAt: cache.cachedAt,
+      cacheAgeSeconds: ageSeconds(cache.ageMs)
+    });
+  }
+  if (!cache.provider && cache.errorAgeMs <= CURSOR_USAGE_ERROR_COOLDOWN_MS) {
+    return withCursorCacheState(cursorBase(`${cache.errorReason || "Cursor usage endpoint is cooling down"}; retrying after short cooldown`), {
+      cacheStatus: "cooldown",
+      retryAfterSeconds: Math.max(0, Math.ceil((CURSOR_USAGE_ERROR_COOLDOWN_MS - cache.errorAgeMs) / 1000)),
+      failureKind: cursorFailureKind(cache.errorReason)
+    });
+  }
+
+  const auth = cursorAuthCredentials();
+  if (!auth.token || !auth.userId || !auth.cookie) {
+    writeCursorUsageError(auth.reason);
+    if (cache.provider) return cursorStaleCacheProvider(cache, auth.reason);
+    return withCursorCacheState(cursorBase(auth.reason), {
+      cacheStatus: "error",
+      failureKind: cursorFailureKind(auth.reason)
+    });
+  }
+
+  const current = await fetchCursorCurrentPeriodUsage(auth.token);
+  const summary = await fetchCursorUsageSummary(auth.cookie);
+
+  if (current.ok) {
+    const provider = cursorProviderFromCurrentUsage(current.data, updatedAt, summary.ok ? summary.data : null);
+    if (provider.available) {
+      writeCursorProviderCache(provider);
+      return withCursorCacheState(provider, {
+        cacheStatus: "live",
+        cacheUpdatedAt: updatedAt,
+        cacheAgeSeconds: 0
+      });
+    }
+  }
+
+  if (summary.ok) {
+    const provider = cursorProviderFromUsageSummary(summary.data, updatedAt);
+    if (provider.available) {
+      writeCursorProviderCache(provider);
+      return withCursorCacheState(provider, {
+        cacheStatus: "live",
+        cacheUpdatedAt: updatedAt,
+        cacheAgeSeconds: 0
+      });
+    }
+  }
+
+  const legacy = await fetchCursorLegacyUsage(auth.userId, auth.cookie);
+  if (legacy.ok) {
+    const provider = cursorProviderFromLegacyUsage(legacy.data, updatedAt);
+    if (provider.available) {
+      writeCursorProviderCache(provider);
+      return withCursorCacheState(provider, {
+        cacheStatus: "live",
+        cacheUpdatedAt: updatedAt,
+        cacheAgeSeconds: 0
+      });
+    }
+  }
+
+  const reason = safeReason(
+    (current.error || summary.error || legacy.error),
+    "Cursor usage endpoints returned no quota data"
+  );
+  writeCursorUsageError(reason);
+  if (cache.provider) return cursorStaleCacheProvider(cache, reason);
+  return withCursorCacheState(cursorBase(reason), {
+    cacheStatus: "error",
+    failureKind: cursorFailureKind(reason)
+  });
+}
+
 function openCodeGoBase(staleReason) {
   return {
     id: "opencode-go",
@@ -869,6 +1489,7 @@ async function main() {
   if (isProviderEnabled("codex")) providers.push(codexProvider());
   if (isProviderEnabled("opencode-go")) providers.push(await opencodeGoProvider());
   if (isProviderEnabled("claude")) providers.push(await claudeProvider());
+  if (isProviderEnabled("cursor")) providers.push(await cursorProvider());
 
   const staleProviders = providers.filter(provider => provider.stale);
   const result = {

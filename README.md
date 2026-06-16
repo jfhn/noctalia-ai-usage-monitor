@@ -2,7 +2,7 @@
 
 A user-local Noctalia Shell plugin that shows AI quota usage in the bar and in a SmartPanel-style popup.
 
-The plugin currently tracks Codex, OpenCode Go, and Claude Code quota windows where local data is available. It focuses on quota percentages and reset times rather than token counts or estimated cost.
+The plugin currently tracks Codex, OpenCode Go, Claude Code, and Cursor quota windows where local data is available. It focuses on quota percentages and reset times rather than token counts or estimated cost.
 
 ## Features
 
@@ -30,6 +30,7 @@ Runtime cache files are written under:
 ~/.cache/noctalia-ai-usage/latest.json
 ~/.cache/noctalia-ai-usage/claude-rate-limits.json
 ~/.cache/noctalia-ai-usage/claude-oauth-usage.json
+~/.cache/noctalia-ai-usage/cursor-usage.json
 ```
 
 ## Installation
@@ -124,6 +125,37 @@ If no statusline cache is available, the collector attempts to read local Claude
 ```
 
 Failures are cooled down and reported in the UI as timeout, rate-limit, auth, or generic error states.
+
+### Cursor
+
+Cursor usage is read from local Cursor authentication and Cursor usage endpoints. On Linux, the collector looks for:
+
+```text
+~/.config/Cursor/sentry/*.json
+~/.config/Cursor/User/globalStorage/storage.json
+~/.config/Cursor/User/globalStorage/state.vscdb
+```
+
+The collector reads `cursorAuth/accessToken` from Cursor's SQLite state database using `sqlite3`, with a Python `sqlite3` fallback when available. It then queries Cursor's current-period usage endpoint and falls back to the usage-summary or legacy request-count endpoint when needed.
+
+Cursor is shown as a billing-cycle quota window with reset time from Cursor's billing-cycle end. Successful responses are cached briefly in:
+
+```text
+~/.cache/noctalia-ai-usage/cursor-usage.json
+```
+
+Optional overrides are available for non-standard installs:
+
+```text
+CURSOR_CONFIG_DIR
+CURSOR_DB_PATH
+CURSOR_USER_ID
+CURSOR_ACCESS_TOKEN
+CURSOR_COOKIE_HEADER
+CURSOR_SESSION_COOKIE
+```
+
+Cursor support uses unofficial personal usage endpoints, so endpoint or response-shape changes are reported as stale-cache, auth, timeout, rate-limit, or generic error states.
 
 ## Collector
 

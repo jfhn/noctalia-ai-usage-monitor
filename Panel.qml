@@ -145,6 +145,8 @@ Item {
       return "#DE7356";
     if (id === "opencode-go")
       return Color.mOnSurfaceVariant;
+    if (id === "cursor")
+      return "#8AA4FF";
     return Color.mPrimary;
   }
 
@@ -170,6 +172,12 @@ Item {
       cards.push({
         id: "claude",
         color: providerAccentColor("claude")
+      });
+    }
+    if (service.isProviderEnabled("cursor")) {
+      cards.push({
+        id: "cursor",
+        color: providerAccentColor("cursor")
       });
     }
     return cards;
