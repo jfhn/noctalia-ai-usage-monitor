@@ -144,7 +144,7 @@ Item {
     if (id === "claude")
       return "#DE7356";
     if (id === "opencode-go")
-      return "#F4F3EE";
+      return Color.mOnSurfaceVariant;
     return Color.mPrimary;
   }
 
