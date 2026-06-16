@@ -99,14 +99,21 @@ Item {
   function windowDetailText(windowData) {
     if (!service || !windowData)
       return "n/a";
-    var parts = [service.displayPercentText(windowData) + " " + service.representationName()];
+    var parts = [padLeft(service.displayPercentText(windowData), 4) + " " + service.representationName()];
     var alternateText = service.alternatePercentText(windowData);
     if (alternateText !== "n/a")
-      parts.push(alternateText + " " + service.alternateRepresentationName());
+      parts.push(padLeft(alternateText, 4) + " " + service.alternateRepresentationName());
     var reset = service.formatResetRemaining(windowData.resetAt);
     if (reset !== "")
-      parts.push(reset);
+      parts.push(padLeft(reset, 5));
     return parts.join(" | ");
+  }
+
+  function padLeft(value, width) {
+    var text = String(value === null || value === undefined ? "" : value);
+    while (text.length < width)
+      text = " " + text;
+    return text;
   }
 
   function headerRefreshText() {
