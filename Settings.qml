@@ -25,10 +25,24 @@ ColumnLayout {
     return providers[id] !== false;
   }
 
+  function barWindowSettings() {
+    if (!pluginApi || !pluginApi.pluginSettings || !pluginApi.pluginSettings.barWindows)
+      return {};
+    return pluginApi.pluginSettings.barWindows;
+  }
+
+  function barWindowEnabled(id) {
+    var windows = barWindowSettings();
+    return windows[id] !== false;
+  }
+
   function loadSettings() {
     codexToggle.checked = providerEnabled("codex");
     opencodeGoToggle.checked = providerEnabled("opencode-go");
     claudeToggle.checked = providerEnabled("claude");
+    fiveHourToggle.checked = barWindowEnabled("five_hour");
+    weeklyToggle.checked = barWindowEnabled("weekly");
+    monthlyToggle.checked = barWindowEnabled("monthly");
   }
 
   function saveSettings() {
@@ -40,9 +54,15 @@ ColumnLayout {
       "opencode-go": opencodeGoToggle.checked,
       "claude": claudeToggle.checked
     });
+    var nextBarWindows = Object.assign({}, pluginApi.pluginSettings.barWindows || {}, {
+      "five_hour": fiveHourToggle.checked,
+      "weekly": weeklyToggle.checked,
+      "monthly": monthlyToggle.checked
+    });
 
     pluginApi.pluginSettings = Object.assign({}, pluginApi.pluginSettings || {}, {
-      "providers": nextProviders
+      "providers": nextProviders,
+      "barWindows": nextBarWindows
     });
     pluginApi.saveSettings();
     pluginApi.mainInstance?.reloadSettings();
@@ -82,5 +102,40 @@ ColumnLayout {
     description: "Read Claude Code quota data from statusline cache or OAuth usage."
     checked: true
     onToggled: checked => claudeToggle.checked = checked
+  }
+
+  NLabel {
+    Layout.fillWidth: true
+    label: "Status Bar"
+    description: "Choose which quota windows appear in the compact and detailed bar text."
+    icon: "panel-top"
+    iconColor: Color.mPrimary
+  }
+
+  NToggle {
+    id: fiveHourToggle
+    Layout.fillWidth: true
+    label: "5-hour window"
+    description: "Show 5h quota percentages and remaining reset time in the bar."
+    checked: true
+    onToggled: checked => fiveHourToggle.checked = checked
+  }
+
+  NToggle {
+    id: weeklyToggle
+    Layout.fillWidth: true
+    label: "7-day window"
+    description: "Show 7d quota percentages and remaining reset time in the bar."
+    checked: true
+    onToggled: checked => weeklyToggle.checked = checked
+  }
+
+  NToggle {
+    id: monthlyToggle
+    Layout.fillWidth: true
+    label: "30-day window"
+    description: "Show 30d quota percentages and remaining reset time when a provider reports them."
+    checked: true
+    onToggled: checked => monthlyToggle.checked = checked
   }
 }

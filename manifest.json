@@ -21,6 +21,11 @@
         "opencode-go": true,
         "claude": true
       },
+      "barWindows": {
+        "five_hour": true,
+        "weekly": true,
+        "monthly": true
+      },
       "compactMode": false,
       "showCosts": true,
       "showUsedOnlyProvidersInBar": true
