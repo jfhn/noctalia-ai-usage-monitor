@@ -19,6 +19,7 @@ Item {
   property bool collectorRunning: false
   property var activeCollectorProcess: null
   property double collectorStartedAt: 0
+  property int refreshVersion: 0
   property string representationMode: "remaining"
   property int settingsVersion: 0
 
@@ -112,6 +113,7 @@ Item {
       lastUpdated = new Date().toISOString();
       isStale = false;
       staleReason = "";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
       return false;
@@ -158,6 +160,7 @@ Item {
 
     isStale = true;
     staleReason = reason || "collector stopped";
+    refreshVersion++;
     rebuildSummary();
     rebuildTooltipRows();
   }
@@ -166,6 +169,7 @@ Item {
     if (exitCode !== 0 || text.trim() === "") {
       isStale = true;
       staleReason = exitCode !== 0 ? "collector exited " + exitCode : "collector returned no data";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
       return;
@@ -179,11 +183,13 @@ Item {
       isStale = data.stale === true || ageStale;
       staleReason = data.staleReason || (ageStale ? "data is older than " + Math.round(staleAfterMs / 60000) + " minutes" : "");
       appendHistory(providers);
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
     } catch (e) {
       isStale = true;
       staleReason = "collector JSON parse failed";
+      refreshVersion++;
       rebuildSummary();
       rebuildTooltipRows();
     }
@@ -554,7 +560,7 @@ Item {
     }
     if (isProviderEnabled("claude"))
       parts.push(barTextFor(providerById("claude"), "Claude", "Cl"));
-    summaryText = parts.length > 0 ? parts.join(" · ") : "AI Usage off";
+    summaryText = parts.length > 0 ? parts.join(isCompactMode() ? "·" : " · ") : "AI Usage off";
   }
 
   function providerTooltipValue(provider) {
@@ -568,7 +574,7 @@ Item {
     var state = providerStateText(provider);
     if (state)
       mode = state;
-    if (provider.stale)
+    if (provider.stale && !provider.failureKind)
       mode = "Stale";
 
     if (provider.mode === "exact-remaining") {

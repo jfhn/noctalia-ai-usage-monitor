@@ -23,11 +23,21 @@ Item {
     var state = providerStateText(providerData);
     if (!providerData || providerData.available === false)
       return state || "Unavailable";
-    if (providerData.stale)
-      return "Stale";
     if (state)
       return state;
+    if (providerData.stale)
+      return "Stale";
     return providerData.mode === "exact-remaining" && service ? service.representationTitle() + " quota" : "Unavailable";
+  }
+
+  function stateColor(providerData, fallbackColor) {
+    if (!providerData)
+      return fallbackColor;
+    if (providerData.failureKind || providerData.available === false)
+      return Color.mError;
+    if (providerData.stale)
+      return Color.mError;
+    return fallbackColor;
   }
 
   function quotaWindows(providerData) {
@@ -133,6 +143,7 @@ Item {
     if (!service)
       return cards;
     service.settingsVersion;
+    service.refreshVersion;
     if (service.isProviderEnabled("codex")) {
       cards.push({
         id: "codex",
@@ -270,6 +281,7 @@ Item {
           id: card
           required property var modelData
           readonly property var providerData: root.provider(modelData.id)
+          readonly property color accentColor: root.stateColor(providerData, modelData.color)
 
           Layout.fillWidth: true
           Layout.preferredHeight: Math.round(116 * Style.uiScaleRatio)
@@ -292,7 +304,7 @@ Item {
                   text: root.metricText(card.providerData)
                   pointSize: Style.fontSizeS
                   font.weight: Style.fontWeightSemiBold
-                  color: card.modelData.color
+                  color: card.accentColor
                   family: Settings.data.ui.fontFixed
                 }
 
@@ -331,7 +343,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 height: Math.max(8, Math.round(14 * Style.uiScaleRatio))
                 radius: Math.round(height / 2)
-                color: card.modelData.color
+                color: card.accentColor
                 opacity: 0.16
               }
 
@@ -341,7 +353,7 @@ Item {
                 width: Math.round(usageBarTrack.width * usageBarSlot.displayPercent / 100)
                 height: usageBarTrack.height
                 radius: usageBarTrack.radius
-                color: card.modelData.color
+                color: card.accentColor
                 visible: width > 0
 
                 Behavior on width {
@@ -359,7 +371,7 @@ Item {
               NText {
                 text: root.statusText(card.providerData)
                 pointSize: Style.fontSizeXS
-                color: card.providerData && card.providerData.stale ? Color.mTertiary : Color.mOnSurfaceVariant
+                color: root.stateColor(card.providerData, Color.mOnSurfaceVariant)
               }
 
               Item {
@@ -402,6 +414,7 @@ Item {
                 service.providers;
                 service.lastUpdated;
                 service.settingsVersion;
+                service.refreshVersion;
               }
               return root.detailRows();
             }

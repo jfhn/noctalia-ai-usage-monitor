@@ -11,6 +11,8 @@ const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
 const now = Date.now();
 const CLAUDE_OAUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const CLAUDE_OAUTH_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+const CLAUDE_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CODEX_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ALL_PROVIDER_IDS = ["codex", "opencode-go", "claude"];
 
 function enabledProviderSet() {
@@ -184,6 +186,14 @@ function firstWindow(windows, id) {
   return windows.find(window => window && window.id === id) || null;
 }
 
+function hasFutureReset(windows) {
+  if (!Array.isArray(windows)) return false;
+  return windows.some(window => {
+    const resetMs = Date.parse((window && window.resetAt) || "");
+    return Number.isFinite(resetMs) && resetMs > now;
+  });
+}
+
 function ageSeconds(ageMs) {
   return Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
 }
@@ -292,6 +302,7 @@ function codexProvider() {
   ].filter(Boolean);
 
   const ageMs = now - latest.timestampMs;
+  const stale = !hasFutureReset(windows) && ageMs > CODEX_RATE_LIMIT_MAX_AGE_MS;
   return {
     ...base,
     usedPercent: primary.usedPercent,
@@ -303,8 +314,8 @@ function codexProvider() {
     monthlyResetAt: null,
     windows,
     available: true,
-    stale: ageMs > 15 * 60 * 1000,
-    staleReason: ageMs > 15 * 60 * 1000 ? "Codex has not emitted fresh rate limit data recently" : null,
+    stale,
+    staleReason: stale ? "Codex quota data is older than 24 hours and has no active reset window" : null,
     cacheUpdatedAt: latest.timestamp,
     planType: latest.rateLimits.plan_type || null
   };
@@ -429,6 +440,10 @@ function claudeProviderFromRateLimits(data, cachedAt, source, staleReason) {
     makeQuotaWindow("five_hour", "5h", fiveHour),
     makeQuotaWindow("weekly", "7d", weekly)
   ].filter(Boolean);
+  const cachedMs = cachedAt ? Date.parse(cachedAt) : NaN;
+  const stale = Number.isFinite(cachedMs)
+    && !hasFutureReset(windows)
+    && now - cachedMs > CLAUDE_RATE_LIMIT_MAX_AGE_MS;
 
   return {
     ...base,
@@ -441,7 +456,10 @@ function claudeProviderFromRateLimits(data, cachedAt, source, staleReason) {
     monthlyResetAt: null,
     windows,
     available: true,
-    staleReason: null
+    stale,
+    staleReason: stale
+      ? `${source || "Claude rate limit"} data is older than 24 hours and has no active reset window`
+      : null
   };
 }
 
@@ -520,7 +538,7 @@ async function claudeProvider() {
     "claude statusLine rate_limits",
     "Claude rate limits appear after Claude Code provides statusline input"
   );
-  if (statusline.available) {
+  if (statusline.available && !statusline.stale) {
     return withClaudeCacheState(statusline, {
       cacheStatus: cached.cachedAt ? "statusline-cache" : "live",
       cacheUpdatedAt: cached.cachedAt,
@@ -577,17 +595,42 @@ async function claudeProvider() {
       oauth.reason || "Claude OAuth usage endpoint unavailable"
     );
     if (fallback.available) {
-      return withClaudeCacheState({
+      const failureKind = claudeOauthFailureKind(oauth.reason);
+      const provider = failureKind === "auth" ? {
+        ...fallback,
+        available: false,
+        usedPercent: null,
+        remainingPercent: null,
+        weeklyRemainingPercent: null,
+        monthlyRemainingPercent: null,
+        resetAt: null,
+        weeklyResetAt: null,
+        monthlyResetAt: null,
+        windows: [],
+        source: "Claude OAuth usage endpoint",
+        stale: true,
+        staleReason: oauth.reason || "Claude OAuth usage endpoint unavailable"
+      } : {
         ...fallback,
         stale: true,
         staleReason: oauth.reason || "Claude OAuth usage endpoint unavailable"
-      }, {
+      };
+      return withClaudeCacheState(provider, {
         cacheStatus: "stale-cache",
         cacheUpdatedAt: oauthCache.cachedAt,
         cacheAgeSeconds: ageSeconds(oauthCache.ageMs),
-        failureKind: claudeOauthFailureKind(oauth.reason)
+        failureKind
       });
     }
+  }
+
+  if (statusline.available) {
+    return withClaudeCacheState(statusline, {
+      cacheStatus: "stale-cache",
+      cacheUpdatedAt: cached.cachedAt,
+      cacheAgeSeconds: cached.cachedAt ? ageSeconds(now - Date.parse(cached.cachedAt)) : null,
+      failureKind: claudeOauthFailureKind(oauth.reason)
+    });
   }
 
   return withClaudeCacheState(live, {

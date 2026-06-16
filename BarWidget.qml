@@ -22,6 +22,7 @@ Item {
   readonly property real capsuleHeight: Style.getCapsuleHeightForScreen(screenName)
   readonly property real barFontSize: Style.getBarFontSizeForScreen(screenName)
   readonly property real iconSize: Style.toOdd(capsuleHeight * 0.48)
+  readonly property bool showIcon: isVertical
   readonly property string textValue: service ? service.summaryText : "Codex n/a Go n/a Claude n/a"
   readonly property real contentWidth: isVertical ? capsuleHeight : Math.round(contentRow.implicitWidth + Style.margin2M)
   readonly property real contentHeight: isVertical ? Math.round(contentRow.implicitHeight + Style.margin2M) : capsuleHeight
@@ -81,8 +82,9 @@ Item {
         icon: "brain"
         pointSize: root.iconSize
         applyUiScale: false
-        color: root.service && root.service.isStale ? Color.mTertiary : Color.mPrimary
+        color: root.service && root.service.isStale ? Color.mError : Color.mPrimary
         Layout.alignment: Qt.AlignVCenter
+        visible: root.showIcon
       }
 
       NText {
@@ -90,7 +92,7 @@ Item {
         pointSize: root.barFontSize
         applyUiScale: false
         family: Settings.data.ui.fontFixed
-        color: root.service && root.service.isStale ? Color.mTertiary : Color.mOnSurface
+        color: root.service && root.service.isStale ? Color.mError : Color.mOnSurface
         verticalAlignment: Text.AlignVCenter
         Layout.alignment: Qt.AlignVCenter
         visible: !root.isVertical
