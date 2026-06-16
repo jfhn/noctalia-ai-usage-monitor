@@ -124,7 +124,7 @@ ColumnLayout {
     id: panelLayoutCombo
     Layout.fillWidth: true
     label: "Window layout"
-    description: "Default keeps separate text and bars; meter rows combine them into filled rows."
+    description: "Default keeps separate text and bars; meter rows and tiles provide denser visual summaries."
     model: [
       {
         "key": "default",
@@ -133,6 +133,10 @@ ColumnLayout {
       {
         "key": "meterRows",
         "name": "Meter rows"
+      },
+      {
+        "key": "tiles",
+        "name": "Tiles"
       }
     ]
     currentKey: "default"
