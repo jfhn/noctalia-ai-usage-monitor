@@ -141,7 +141,7 @@ ColumnLayout {
     id: panelLayoutCombo
     Layout.fillWidth: true
     label: "Window layout"
-    description: "Default keeps separate text and bars; meter rows and tiles provide denser visual summaries."
+    description: "Default keeps separate text and bars; tile variants provide denser visual summaries."
     model: [
       {
         "key": "default",
@@ -154,6 +154,14 @@ ColumnLayout {
       {
         "key": "tiles",
         "name": "Tiles"
+      },
+      {
+        "key": "segmentedTiles",
+        "name": "Segmented tiles"
+      },
+      {
+        "key": "animatedTiles",
+        "name": "Animated tiles"
       }
     ]
     currentKey: "default"

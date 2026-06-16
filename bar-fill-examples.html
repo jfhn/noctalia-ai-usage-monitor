@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Usage Bar Fill Examples</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f5f4f2;
+      --surface: #fdfcfb;
+      --surface-soft: #f8f7f5;
+      --text: #22252a;
+      --muted: #555b64;
+      --border: rgba(34, 37, 42, 0.08);
+      --shadow: 0 18px 40px rgba(24, 27, 31, 0.12);
+      --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Liberation Mono", Menlo, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+
+    main {
+      width: min(1220px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .intro {
+      margin: 0 0 24px;
+      max-width: 760px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .example-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .example {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 8px 24px rgba(24, 27, 31, 0.06);
+    }
+
+    .example-header {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .number {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #20242a;
+      color: #fff;
+      font: 700 13px/1 var(--sans);
+    }
+
+    h2 {
+      margin: 0 0 3px;
+      font-size: 15px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .example-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .panel {
+      padding: 14px;
+      background: var(--surface-soft);
+    }
+
+    .provider-card {
+      margin-bottom: 12px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.84);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+    }
+
+    .provider-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .provider-title {
+      padding: 9px 10px 7px;
+      color: #343841;
+      font: 600 12px/1.2 var(--mono);
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 0 6px;
+    }
+
+    .tile-grid.three {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tile-grid.three .usage-tile:last-child {
+      grid-column: 1;
+    }
+
+    .usage-tile {
+      --accent: #74aa9c;
+      --track-alpha: 0.16;
+      --fill-alpha: 0.28;
+      --pct: 0%;
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: 58px;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+      background: color-mix(in srgb, var(--accent) 14%, white);
+      font-family: var(--mono);
+    }
+
+    .tile-inner {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 2px;
+      height: 100%;
+      padding: 9px 8px 8px;
+    }
+
+    .top-line,
+    .bottom-line {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    .window {
+      overflow: hidden;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .percent {
+      margin-left: auto;
+      color: #05070a;
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .metric,
+    .reset {
+      color: #343841;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .metric {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .reset {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .provider-footer {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 10px 10px;
+      font: 12px/1.2 var(--mono);
+      color: #3e434b;
+    }
+
+    .provider-footer span:last-child {
+      overflow: hidden;
+      margin-left: auto;
+      max-width: 48%;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .style-fill .usage-tile::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--pct);
+      background: color-mix(in srgb, var(--accent) 32%, transparent);
+    }
+
+    .style-fill .usage-tile::after,
+    .style-soft .usage-tile::after,
+    .style-threshold .usage-tile::after,
+    .style-marker .usage-tile::after,
+    .style-animated .usage-tile::after {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+
+    .style-fill .usage-tile .rail,
+    .style-soft .usage-tile .rail,
+    .style-threshold .usage-tile .rail,
+    .style-marker .usage-tile .rail,
+    .style-animated .usage-tile .rail {
+      position: absolute;
+      z-index: 2;
+      bottom: 0;
+      left: 0;
+      width: var(--pct);
+      height: 3px;
+      border-radius: 0 2px 2px 0;
+      background: var(--accent);
+    }
+
+    .style-bottom .usage-tile::after {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+
+    .style-bottom .usage-tile .rail {
+      position: absolute;
+      z-index: 2;
+      bottom: 0;
+      left: 0;
+      width: var(--pct);
+      height: 4px;
+      border-radius: 0 3px 3px 0;
+      background: var(--accent);
+    }
+
+    .style-soft .usage-tile::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--pct);
+      background:
+        linear-gradient(
+          90deg,
+          color-mix(in srgb, var(--accent) 40%, transparent),
+          color-mix(in srgb, var(--accent) 18%, transparent)
+        );
+    }
+
+    .style-threshold .usage-tile {
+      --accent: var(--threshold);
+      background: color-mix(in srgb, var(--threshold) 12%, white);
+      border-color: color-mix(in srgb, var(--threshold) 30%, transparent);
+    }
+
+    .style-segments .usage-tile {
+      min-height: 68px;
+    }
+
+    .segments {
+      position: absolute;
+      z-index: 1;
+      right: 7px;
+      bottom: 6px;
+      left: 7px;
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 2px;
+      height: 4px;
+    }
+
+    .seg {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+
+    .seg.on {
+      background: var(--accent);
+    }
+
+    .style-segments .tile-inner {
+      padding-bottom: 16px;
+    }
+
+    .style-marker .usage-tile::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--pct);
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+
+    .marker {
+      position: absolute;
+      z-index: 3;
+      top: 0;
+      bottom: 0;
+      left: var(--pct);
+      width: 2px;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--accent) 82%, #000 18%);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.74);
+      transform: translateX(-1px);
+    }
+
+    .style-inverted .usage-tile {
+      background:
+        linear-gradient(
+          90deg,
+          color-mix(in srgb, var(--accent) 11%, white) 0,
+          color-mix(in srgb, var(--accent) 11%, white) calc(100% - var(--pct)),
+          color-mix(in srgb, var(--accent) 32%, white) calc(100% - var(--pct)),
+          color-mix(in srgb, var(--accent) 32%, white) 100%
+        );
+    }
+
+    .style-inverted .usage-tile::after {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      right: 0;
+      bottom: 0;
+      width: var(--pct);
+      height: 3px;
+      border-radius: 2px 0 0 2px;
+      background: var(--accent);
+    }
+
+    .style-inverted .usage-tile::before {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      right: var(--pct);
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+
+    .style-animated .usage-tile::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--pct);
+      background: color-mix(in srgb, var(--accent) 30%, transparent);
+      animation: fill-in 900ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+    }
+
+    .style-animated .usage-tile .rail {
+      animation: rail-in 900ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+    }
+
+    @keyframes fill-in {
+      from {
+        width: 0;
+      }
+      to {
+        width: var(--pct);
+      }
+    }
+
+    @keyframes rail-in {
+      from {
+        width: 0;
+      }
+      to {
+        width: var(--pct);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .style-animated .usage-tile::before,
+      .style-animated .usage-tile .rail {
+        animation: none;
+      }
+    }
+
+    @media (max-width: 520px) {
+      main {
+        width: min(100vw - 20px, 420px);
+        padding-top: 18px;
+      }
+
+      .example-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tile-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tile-grid.three .usage-tile:last-child {
+        grid-column: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AI Usage Bar Fill Examples</h1>
+    <p class="intro">
+      Same sample data as the current panel, rendered with different ways for each quota tile to show usage.
+      Percentages are treated as usage, so higher numbers fill more of the tile.
+    </p>
+    <section id="examples" class="example-grid" aria-label="Usage fill examples"></section>
+  </main>
+
+  <template id="example-template">
+    <article class="example">
+      <header class="example-header">
+        <div class="number"></div>
+        <div>
+          <h2></h2>
+          <p></p>
+        </div>
+      </header>
+      <div class="panel"></div>
+    </article>
+  </template>
+
+  <template id="provider-template">
+    <section class="provider-card">
+      <div class="provider-title"></div>
+      <div class="tile-grid"></div>
+      <footer class="provider-footer">
+        <span></span>
+        <span></span>
+      </footer>
+    </section>
+  </template>
+
+  <template id="tile-template">
+    <article class="usage-tile">
+      <div class="tile-inner">
+        <div class="top-line">
+          <span class="window"></span>
+          <span class="percent"></span>
+        </div>
+        <div class="bottom-line">
+          <span class="metric">remaining</span>
+          <span class="reset"></span>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script>
+    const providers = [
+      {
+        name: "Codex",
+        accent: "#74aa9c",
+        status: "Remaining quota",
+        source: "codex session rate_limits",
+        windows: [
+          { label: "5h", percent: 78, reset: "1h51m" },
+          { label: "7d", percent: 79, reset: "2d2h" }
+        ]
+      },
+      {
+        name: "OpenCode Go",
+        accent: "#7b7d81",
+        status: "Remaining quota",
+        source: "opencode-quota dashboard scrape",
+        windows: [
+          { label: "5h", percent: 88, reset: "2h49m" },
+          { label: "7d", percent: 45, reset: "5d14h" },
+          { label: "30d", percent: 36, reset: "8d3h" }
+        ]
+      },
+      {
+        name: "Claude Code",
+        accent: "#de7356",
+        status: "Statusline cache",
+        source: "claude statusline rate_limits",
+        windows: [
+          { label: "5h", percent: 100, reset: "reset n/a" },
+          { label: "7d", percent: 88, reset: "19h" }
+        ]
+      },
+      {
+        name: "Cursor",
+        accent: "#8aa4ff",
+        status: "Remaining quota",
+        source: "current period usage endpoint",
+        windows: [
+          { label: "Auto + Composer", percent: 100, reset: "22d" },
+          { label: "API", percent: 100, reset: "22d" }
+        ]
+      }
+    ];
+
+    const examples = [
+      {
+        title: "Subtle Horizontal Fill",
+        description: "A low-opacity fill sits behind the text, with a small progress rail at the bottom.",
+        className: "style-fill"
+      },
+      {
+        title: "Bottom Progress Rail",
+        description: "Only the bottom accent line fills to the percentage. The tile body stays calm.",
+        className: "style-bottom"
+      },
+      {
+        title: "Soft Full Tile Fill",
+        description: "The filled area is larger and gradient-soft, making usage easier to scan.",
+        className: "style-soft"
+      },
+      {
+        title: "Threshold Colors",
+        description: "The fill switches from normal to amber to red as usage approaches the limit.",
+        className: "style-threshold"
+      },
+      {
+        title: "Segmented Fill",
+        description: "Ten small segments make the percentage feel like a compact gauge.",
+        className: "style-segments"
+      },
+      {
+        title: "Right-Edge Marker",
+        description: "A vertical marker shows the exact percentage on top of the filled area.",
+        className: "style-marker"
+      },
+      {
+        title: "Inverted Direction",
+        description: "The fill grows from the right, useful if the UI is framed as remaining time/quota.",
+        className: "style-inverted"
+      },
+      {
+        title: "Animated Update",
+        description: "Same as horizontal fill, but the fill animates in when the panel appears.",
+        className: "style-animated"
+      }
+    ];
+
+    const root = document.getElementById("examples");
+    const exampleTemplate = document.getElementById("example-template");
+    const providerTemplate = document.getElementById("provider-template");
+    const tileTemplate = document.getElementById("tile-template");
+
+    function thresholdColor(percent, accent) {
+      if (percent >= 95) return "#d94f3a";
+      if (percent >= 80) return "#d89335";
+      return accent;
+    }
+
+    function addSegments(tile, percent) {
+      const segments = document.createElement("div");
+      segments.className = "segments";
+      const filled = Math.ceil(Math.max(0, Math.min(100, percent)) / 10);
+      for (let i = 0; i < 10; i += 1) {
+        const segment = document.createElement("span");
+        segment.className = i < filled ? "seg on" : "seg";
+        segments.append(segment);
+      }
+      tile.append(segments);
+    }
+
+    function renderTile(windowData, provider, example) {
+      const tile = tileTemplate.content.firstElementChild.cloneNode(true);
+      const percent = Math.max(0, Math.min(100, Number(windowData.percent) || 0));
+      const accent = provider.accent;
+      tile.style.setProperty("--accent", accent);
+      tile.style.setProperty("--threshold", thresholdColor(percent, accent));
+      tile.style.setProperty("--pct", `${percent}%`);
+      tile.querySelector(".window").textContent = windowData.label;
+      tile.querySelector(".percent").textContent = `${percent}%`;
+      tile.querySelector(".reset").textContent = windowData.reset;
+
+      if (example.className !== "style-segments" && example.className !== "style-inverted") {
+        const rail = document.createElement("div");
+        rail.className = "rail";
+        tile.append(rail);
+      }
+
+      if (example.className === "style-segments") {
+        addSegments(tile, percent);
+      }
+
+      if (example.className === "style-marker") {
+        const marker = document.createElement("div");
+        marker.className = "marker";
+        tile.append(marker);
+      }
+
+      return tile;
+    }
+
+    function renderProvider(provider, example) {
+      const card = providerTemplate.content.firstElementChild.cloneNode(true);
+      const grid = card.querySelector(".tile-grid");
+      card.querySelector(".provider-title").textContent = provider.name;
+      card.querySelector(".provider-footer span:first-child").textContent = provider.status;
+      card.querySelector(".provider-footer span:last-child").textContent = provider.source;
+      if (provider.windows.length === 3) grid.classList.add("three");
+      for (const windowData of provider.windows) {
+        grid.append(renderTile(windowData, provider, example));
+      }
+      return card;
+    }
+
+    function renderExample(example, index) {
+      const node = exampleTemplate.content.firstElementChild.cloneNode(true);
+      node.classList.add(example.className);
+      node.querySelector(".number").textContent = String(index + 1);
+      node.querySelector("h2").textContent = example.title;
+      node.querySelector("p").textContent = example.description;
+      const panel = node.querySelector(".panel");
+      for (const provider of providers) {
+        panel.append(renderProvider(provider, example));
+      }
+      return node;
+    }
+
+    examples.forEach((example, index) => {
+      root.append(renderExample(example, index));
+    });
+  </script>
+</body>
+</html>

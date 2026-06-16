@@ -134,8 +134,9 @@ Item {
     return panelLayoutStyle() === "meterRows";
   }
 
-  function isTilesStyle() {
-    return panelLayoutStyle() === "tiles";
+  function isAnyTilesStyle() {
+    var style = panelLayoutStyle();
+    return style === "tiles" || style === "segmentedTiles" || style === "animatedTiles";
   }
 
   function providerAccentColor(id) {
@@ -338,7 +339,7 @@ Item {
               ColumnLayout {
                 spacing: 0
                 Layout.fillWidth: true
-                visible: !root.isMeterRowsStyle() && !root.isTilesStyle()
+                visible: !root.isMeterRowsStyle() && !root.isAnyTilesStyle()
 
                 NText {
                   text: root.metricText(card.providerData)
@@ -353,8 +354,8 @@ Item {
                 text: card.providerData ? card.providerData.label : card.modelData.id
                 pointSize: Style.fontSizeXS
                 color: Color.mOnSurfaceVariant
-                horizontalAlignment: root.isMeterRowsStyle() || root.isTilesStyle() ? Text.AlignLeft : Text.AlignRight
-                Layout.fillWidth: root.isMeterRowsStyle() || root.isTilesStyle()
+                horizontalAlignment: root.isMeterRowsStyle() || root.isAnyTilesStyle() ? Text.AlignLeft : Text.AlignRight
+                Layout.fillWidth: root.isMeterRowsStyle() || root.isAnyTilesStyle()
                 Layout.alignment: Qt.AlignTop
               }
             }
@@ -362,7 +363,7 @@ Item {
             ColumnLayout {
               Layout.fillWidth: true
               spacing: Style.marginXS
-              visible: card.windows.length > 0 && !root.isTilesStyle()
+              visible: card.windows.length > 0 && !root.isAnyTilesStyle()
 
               Repeater {
                 model: card.windows
@@ -381,7 +382,7 @@ Item {
               columns: 2
               columnSpacing: Style.marginXS
               rowSpacing: Style.marginXS
-              visible: card.windows.length > 0 && root.isTilesStyle()
+              visible: card.windows.length > 0 && root.isAnyTilesStyle()
 
               Repeater {
                 model: card.windows
@@ -390,6 +391,7 @@ Item {
                   required property var modelData
                   windowData: modelData
                   accentColor: card.accentColor
+                  tileStyle: root.panelLayoutStyle()
                 }
               }
             }
@@ -583,15 +585,35 @@ Item {
   }
 
   component WindowTile: Item {
+    id: tileRoot
+
     property var windowData
     property color accentColor: Color.mPrimary
+    property string tileStyle: "tiles"
 
     readonly property string resetLeft: root.service ? root.service.formatResetRemaining(windowData && windowData.resetAt) : ""
+    readonly property real displayPercent: root.windowDisplayPercent(windowData)
+    readonly property bool animatedTiles: tileStyle === "animatedTiles"
+    readonly property bool segmentedTiles: tileStyle === "segmentedTiles"
+    property real meterPercent: 0
 
     Layout.fillWidth: true
-    Layout.preferredHeight: Math.max(Math.round(58 * Style.uiScaleRatio), tileContent.implicitHeight + Style.marginM)
+    Layout.preferredHeight: Math.max(Math.round((segmentedTiles ? 68 : 58) * Style.uiScaleRatio), tileContent.implicitHeight + Style.marginM + (segmentedTiles ? Math.round(12 * Style.uiScaleRatio) : 0))
+    clip: true
+
+    Component.onCompleted: meterPercent = displayPercent
+    onDisplayPercentChanged: meterPercent = displayPercent
+
+    Behavior on meterPercent {
+      NumberAnimation {
+        duration: 260
+        easing.type: Easing.OutCubic
+      }
+    }
 
     Rectangle {
+      id: tileTrack
+
       anchors.fill: parent
       radius: Style.radiusS
       color: accentColor
@@ -602,19 +624,105 @@ Item {
 
     Rectangle {
       anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: Math.round(parent.width * tileRoot.meterPercent / 100)
+      radius: tileTrack.radius
+      color: accentColor
+      opacity: 0.28
+      visible: tileRoot.animatedTiles && width > 0
+    }
+
+    Rectangle {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      height: Math.max(2, Math.round(3 * Style.uiScaleRatio))
+      radius: Math.round(height / 2)
+      color: accentColor
+      opacity: 0.22
+      visible: tileRoot.animatedTiles
+    }
+
+    Rectangle {
+      anchors.left: parent.left
+      anchors.bottom: parent.bottom
+      width: Math.round(parent.width * tileRoot.meterPercent / 100)
+      height: Math.max(2, Math.round(3 * Style.uiScaleRatio))
+      radius: Math.round(height / 2)
+      color: accentColor
+      opacity: 0.9
+      visible: tileRoot.animatedTiles && width > 0
+    }
+
+    Rectangle {
+      anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: parent.bottom
       height: Math.max(2, Math.round(3 * Style.uiScaleRatio))
       radius: Math.round(height / 2)
       color: accentColor
       opacity: 0.85
+      visible: !tileRoot.animatedTiles && !tileRoot.segmentedTiles
+    }
+
+    Row {
+      id: segmentRow
+
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.leftMargin: Style.marginS
+      anchors.rightMargin: Style.marginS
+      anchors.bottomMargin: Math.max(5, Math.round(5 * Style.uiScaleRatio))
+      height: Math.max(4, Math.round(5 * Style.uiScaleRatio))
+      spacing: Math.max(2, Math.round(2 * Style.uiScaleRatio))
+      visible: tileRoot.segmentedTiles
+
+      Repeater {
+        model: 10
+
+        delegate: Item {
+          readonly property real segmentFill: Math.max(0, Math.min(1, (tileRoot.meterPercent - index * 10) / 10))
+
+          width: Math.max(0, Math.round((segmentRow.width - segmentRow.spacing * 9) / 10))
+          height: segmentRow.height
+
+          Rectangle {
+            anchors.fill: parent
+            radius: Math.round(height / 2)
+            color: tileRoot.accentColor
+            opacity: 0.18
+          }
+
+          Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Math.round(parent.width * parent.segmentFill)
+            radius: Math.round(height / 2)
+            color: tileRoot.accentColor
+            opacity: parent.segmentFill > 0 ? 0.9 : 0
+
+            Behavior on opacity {
+              NumberAnimation {
+                duration: 160
+                easing.type: Easing.OutCubic
+              }
+            }
+          }
+        }
+      }
     }
 
     ColumnLayout {
       id: tileContent
 
       anchors.fill: parent
-      anchors.margins: Style.marginS
+      anchors.leftMargin: Style.marginS
+      anchors.rightMargin: Style.marginS
+      anchors.topMargin: Style.marginS
+      anchors.bottomMargin: tileRoot.segmentedTiles ? Math.round(16 * Style.uiScaleRatio) : Style.marginS
       spacing: 0
 
       RowLayout {

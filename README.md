@@ -71,6 +71,14 @@ Default settings are defined in `manifest.json`:
 
 `AI_USAGE_TIMEZONE` is passed to the collector from the plugin setting.
 
+`panelLayoutStyle` controls the popup quota-window rendering. Supported values are:
+
+- `default`
+- `meterRows`
+- `tiles`
+- `segmentedTiles`
+- `animatedTiles`
+
 ## Providers
 
 ### Codex
