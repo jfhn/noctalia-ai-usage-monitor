@@ -209,6 +209,10 @@ Item {
     return "reset " + Qt.formatDateTime(reset, "MMM d HH:mm");
   }
 
+  function windowLabelWidth(labelText) {
+    return Math.max(Math.round(32 * Style.uiScaleRatio), Math.min(Math.round(112 * Style.uiScaleRatio), labelText.implicitWidth));
+  }
+
   Flickable {
     id: flickable
     anchors.fill: parent
@@ -441,12 +445,13 @@ Item {
       spacing: Style.marginS
 
       NText {
+        id: windowRowLabel
         text: windowData ? (windowData.label || windowData.id) : ""
         pointSize: Style.fontSizeXS
         font.weight: Style.fontWeightSemiBold
         color: accentColor
         family: Settings.data.ui.fontFixed
-        Layout.preferredWidth: Math.round(32 * Style.uiScaleRatio)
+        Layout.preferredWidth: root.windowLabelWidth(windowRowLabel)
       }
 
       NText {
@@ -513,12 +518,13 @@ Item {
         spacing: Style.marginS
 
         NText {
+          id: meterRowLabel
           text: windowData ? (windowData.label || windowData.id) : ""
           pointSize: Style.fontSizeXS
           font.weight: Style.fontWeightSemiBold
           color: accentColor
           family: Settings.data.ui.fontFixed
-          Layout.preferredWidth: Math.round(32 * Style.uiScaleRatio)
+          Layout.preferredWidth: root.windowLabelWidth(meterRowLabel)
         }
 
         NText {

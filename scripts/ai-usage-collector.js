@@ -16,6 +16,7 @@ const CLAUDE_OAUTH_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
 const CURSOR_USAGE_CACHE_TTL_MS = 5 * 60 * 1000;
 const CURSOR_USAGE_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
 const CURSOR_USAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CURSOR_USAGE_CACHE_VERSION = 2;
 const CLAUDE_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CODEX_RATE_LIMIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ALL_PROVIDER_IDS = ["codex", "opencode-go", "claude", "cursor"];
@@ -984,14 +985,30 @@ function cursorPlanUsagePercent(planUsage) {
   return null;
 }
 
-function cursorCycleWindow(usedPercent, resetAt) {
-  return makeQuotaWindow("monthly", "Cycle", normalizeWindow({
+function cursorUsageWindow(id, label, usedPercent, resetAt) {
+  return makeQuotaWindow(id, label, normalizeWindow({
     usedPercent,
     resetAt
   }));
 }
 
-function cursorProviderFromPlanUsage(planUsage, cycleEnd, source, staleReason, cachedAt, planType) {
+function cursorWindowsFromPlanUsage(planUsage, cycleEnd) {
+  const resetAt = normalizeTimestamp(cycleEnd);
+  const autoUsedPercent = firstNumber(planUsage, ["autoPercentUsed"]);
+  const apiUsedPercent = firstNumber(planUsage, ["apiPercentUsed"]);
+  const splitWindows = [
+    cursorUsageWindow("cursor_auto_composer", "Auto + Composer", autoUsedPercent, resetAt),
+    cursorUsageWindow("cursor_api", "API", apiUsedPercent, resetAt)
+  ].filter(Boolean);
+
+  if (splitWindows.length > 0) return splitWindows;
+
+  return [
+    cursorUsageWindow("monthly", "Cycle", cursorPlanUsagePercent(planUsage), resetAt)
+  ].filter(Boolean);
+}
+
+function cursorProviderFromPlanUsage(planUsage, cycleStart, cycleEnd, source, staleReason, cachedAt, planType) {
   const base = {
     ...cursorBase(staleReason),
     mode: "exact-remaining",
@@ -999,29 +1016,30 @@ function cursorProviderFromPlanUsage(planUsage, cycleEnd, source, staleReason, c
     cacheUpdatedAt: cachedAt,
     planType: planType || null
   };
-  const usedPercent = cursorPlanUsagePercent(planUsage);
-  const windowData = cursorCycleWindow(usedPercent, normalizeTimestamp(cycleEnd));
-  if (!windowData) return base;
+  const windows = cursorWindowsFromPlanUsage(planUsage, cycleEnd);
+  const primary = windows[0] || null;
+  const cycleWindow = firstWindow(windows, "monthly");
+  if (!primary) return base;
 
   const cachedMs = cachedAt ? Date.parse(cachedAt) : NaN;
   const stale = Number.isFinite(cachedMs)
-    && !hasFutureReset([windowData])
+    && !hasFutureReset(windows)
     && now - cachedMs > CURSOR_USAGE_MAX_AGE_MS;
 
   return {
     ...base,
-    usedPercent: windowData.usedPercent,
-    remainingPercent: windowData.remainingPercent,
+    usedPercent: primary.usedPercent,
+    remainingPercent: primary.remainingPercent,
     weeklyRemainingPercent: null,
-    monthlyRemainingPercent: windowData.remainingPercent,
-    resetAt: windowData.resetAt,
+    monthlyRemainingPercent: cycleWindow ? cycleWindow.remainingPercent : null,
+    resetAt: primary.resetAt,
     weeklyResetAt: null,
-    monthlyResetAt: windowData.resetAt,
-    windows: [windowData],
+    monthlyResetAt: cycleWindow ? cycleWindow.resetAt : null,
+    windows,
     available: true,
     stale,
     staleReason: stale ? `${source} data is older than 24 hours and has no active billing-cycle reset` : null,
-    billingCycleStart: normalizeTimestamp(planUsage && planUsage.billingCycleStart),
+    billingCycleStart: normalizeTimestamp(cycleStart),
     billingCycleEnd: normalizeTimestamp(cycleEnd),
     autoUsedPercent: firstNumber(planUsage, ["autoPercentUsed"]),
     apiUsedPercent: firstNumber(planUsage, ["apiPercentUsed"]),
@@ -1034,6 +1052,7 @@ function cursorProviderFromCurrentUsage(data, cachedAt, summary) {
   const planType = firstString(summary, ["membershipType", "planType"]);
   return cursorProviderFromPlanUsage(
     data && data.planUsage,
+    data && data.billingCycleStart,
     data && data.billingCycleEnd,
     "Cursor current period usage endpoint",
     "Cursor current period usage endpoint returned no plan usage",
@@ -1046,6 +1065,7 @@ function cursorProviderFromUsageSummary(data, cachedAt) {
   const individualPlan = data && data.individualUsage && data.individualUsage.plan;
   return cursorProviderFromPlanUsage(
     individualPlan,
+    data && data.billingCycleStart,
     data && data.billingCycleEnd,
     "Cursor usage summary endpoint",
     "Cursor usage summary endpoint returned no plan usage",
@@ -1092,6 +1112,7 @@ function cursorProviderFromLegacyUsage(data, cachedAt) {
       used: usedRequests,
       limit: maxRequests
     },
+    data.startOfMonth,
     cycleEnd,
     "Cursor legacy usage endpoint",
     null,
@@ -1111,7 +1132,7 @@ function readCursorProviderCache() {
   const errorAt = normalizeTimestamp(data.lastErrorAt);
   const errorMs = errorAt ? Date.parse(errorAt) : NaN;
   return {
-    provider: data.provider || null,
+    provider: data.cacheVersion === CURSOR_USAGE_CACHE_VERSION ? data.provider || null : null,
     cachedAt,
     ageMs: Number.isFinite(cachedMs) ? now - cachedMs : Infinity,
     errorAgeMs: Number.isFinite(errorMs) ? now - errorMs : Infinity,
@@ -1130,6 +1151,7 @@ function writeCursorProviderCache(provider) {
   };
   try {
     fs.writeFileSync(cursorFile, JSON.stringify({
+      cacheVersion: CURSOR_USAGE_CACHE_VERSION,
       updatedAt,
       provider: cachedProvider
     }, null, 2) + "\n", { mode: 0o600 });
@@ -1140,6 +1162,7 @@ function writeCursorUsageError(reason) {
   const existing = readJsonFile(cursorFile) || {};
   try {
     fs.writeFileSync(cursorFile, JSON.stringify({
+      cacheVersion: CURSOR_USAGE_CACHE_VERSION,
       updatedAt: existing.updatedAt || null,
       provider: existing.provider || null,
       lastErrorAt: updatedAt,
