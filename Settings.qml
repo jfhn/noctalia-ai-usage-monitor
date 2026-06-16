@@ -50,6 +50,7 @@ ColumnLayout {
     codexToggle.checked = providerEnabled("codex");
     opencodeGoToggle.checked = providerEnabled("opencode-go");
     claudeToggle.checked = providerEnabled("claude");
+    cursorToggle.checked = providerEnabled("cursor");
     fiveHourToggle.checked = barWindowEnabled("five_hour");
     weeklyToggle.checked = barWindowEnabled("weekly");
     monthlyToggle.checked = barWindowEnabled("monthly");
@@ -64,7 +65,8 @@ ColumnLayout {
     var nextProviders = Object.assign({}, pluginApi.pluginSettings.providers || {}, {
       "codex": codexToggle.checked,
       "opencode-go": opencodeGoToggle.checked,
-      "claude": claudeToggle.checked
+      "claude": claudeToggle.checked,
+      "cursor": cursorToggle.checked
     });
     var nextBarWindows = Object.assign({}, pluginApi.pluginSettings.barWindows || {}, {
       "five_hour": fiveHourToggle.checked,
@@ -116,6 +118,15 @@ ColumnLayout {
     description: "Read Claude Code quota data from statusline cache or OAuth usage."
     checked: true
     onToggled: checked => claudeToggle.checked = checked
+  }
+
+  NToggle {
+    id: cursorToggle
+    Layout.fillWidth: true
+    label: "Cursor"
+    description: "Read Cursor billing-cycle usage from local Cursor auth and Cursor usage endpoints."
+    checked: true
+    onToggled: checked => cursorToggle.checked = checked
   }
 
   NLabel {

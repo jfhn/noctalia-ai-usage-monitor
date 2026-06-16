@@ -6,6 +6,7 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/noctalia-ai-usage"
 LATEST_FILE="$CACHE_DIR/latest.json"
 CLAUDE_FILE="$CACHE_DIR/claude-rate-limits.json"
 CLAUDE_OAUTH_FILE="$CACHE_DIR/claude-oauth-usage.json"
+CURSOR_FILE="$CACHE_DIR/cursor-usage.json"
 TIMEZONE="${AI_USAGE_TIMEZONE:-UTC}"
 UPDATED_AT="$(TZ="$TIMEZONE" date +"%Y-%m-%dT%H:%M:%S%:z")"
 
@@ -17,7 +18,7 @@ if [ -s "$HOME/.nvm/nvm.sh" ]; then
   nvm use node >/dev/null 2>&1 || true
 fi
 
-export CACHE_DIR LATEST_FILE CLAUDE_FILE CLAUDE_OAUTH_FILE TIMEZONE UPDATED_AT
+export CACHE_DIR LATEST_FILE CLAUDE_FILE CLAUDE_OAUTH_FILE CURSOR_FILE TIMEZONE UPDATED_AT
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 exec node "$SCRIPT_DIR/ai-usage-collector.js" "$@"
