@@ -39,6 +39,8 @@ ColumnLayout {
   function panelLayoutStyle() {
     if (!pluginApi || !pluginApi.pluginSettings)
       return "default";
+    if (pluginApi.pluginSettings.panelLayoutStyle === "tiles")
+      return "animatedTiles";
     return pluginApi.pluginSettings.panelLayoutStyle || "default";
   }
 
@@ -141,7 +143,7 @@ ColumnLayout {
     id: panelLayoutCombo
     Layout.fillWidth: true
     label: "Window layout"
-    description: "Default keeps separate text and bars; meter rows and tiles provide denser visual summaries."
+    description: "Default keeps separate text and bars; tile variants provide denser visual summaries."
     model: [
       {
         "key": "default",
@@ -152,8 +154,12 @@ ColumnLayout {
         "name": "Meter rows"
       },
       {
-        "key": "tiles",
-        "name": "Tiles"
+        "key": "segmentedTiles",
+        "name": "Segmented tiles"
+      },
+      {
+        "key": "animatedTiles",
+        "name": "Animated tiles"
       }
     ]
     currentKey: "default"
