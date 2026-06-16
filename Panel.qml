@@ -96,12 +96,12 @@ Item {
     return "No quota data";
   }
 
-  function windowDetailText(windowData) {
+  function windowDetailText(windowData, includeAlternate) {
     if (!service || !windowData)
       return "n/a";
     var parts = [padLeft(service.displayPercentText(windowData), 4) + " " + service.representationName()];
     var alternateText = service.alternatePercentText(windowData);
-    if (alternateText !== "n/a")
+    if (includeAlternate !== false && alternateText !== "n/a")
       parts.push(padLeft(alternateText, 4) + " " + service.alternateRepresentationName());
     var reset = service.formatResetRemaining(windowData.resetAt);
     if (reset !== "")
@@ -312,6 +312,7 @@ Item {
               ColumnLayout {
                 spacing: 0
                 Layout.fillWidth: true
+                visible: !root.isMeterRowsStyle()
 
                 NText {
                   text: root.metricText(card.providerData)
@@ -326,7 +327,8 @@ Item {
                 text: card.providerData ? card.providerData.label : card.modelData.id
                 pointSize: Style.fontSizeXS
                 color: Color.mOnSurfaceVariant
-                horizontalAlignment: Text.AlignRight
+                horizontalAlignment: root.isMeterRowsStyle() ? Text.AlignLeft : Text.AlignRight
+                Layout.fillWidth: root.isMeterRowsStyle()
                 Layout.alignment: Qt.AlignTop
               }
             }
@@ -408,7 +410,7 @@ Item {
       }
 
       NText {
-        text: root.windowDetailText(windowData)
+        text: root.windowDetailText(windowData, true)
         pointSize: Style.fontSizeXS
         color: Color.mOnSurface
         family: Settings.data.ui.fontFixed
@@ -480,7 +482,7 @@ Item {
         }
 
         NText {
-          text: root.windowDetailText(windowData)
+          text: root.windowDetailText(windowData, false)
           pointSize: Style.fontSizeXS
           color: Color.mOnSurface
           family: Settings.data.ui.fontFixed
