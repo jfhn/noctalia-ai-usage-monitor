@@ -27,6 +27,7 @@
         "monthly": true
       },
       "panelLayoutStyle": "default",
+      "shortBarResetTime": false,
       "compactMode": false,
       "showCosts": true,
       "showUsedOnlyProvidersInBar": true

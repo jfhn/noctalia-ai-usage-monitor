@@ -42,6 +42,10 @@ ColumnLayout {
     return pluginApi.pluginSettings.panelLayoutStyle || "default";
   }
 
+  function shortBarResetTime() {
+    return pluginApi && pluginApi.pluginSettings && pluginApi.pluginSettings.shortBarResetTime === true;
+  }
+
   function loadSettings() {
     codexToggle.checked = providerEnabled("codex");
     opencodeGoToggle.checked = providerEnabled("opencode-go");
@@ -49,6 +53,7 @@ ColumnLayout {
     fiveHourToggle.checked = barWindowEnabled("five_hour");
     weeklyToggle.checked = barWindowEnabled("weekly");
     monthlyToggle.checked = barWindowEnabled("monthly");
+    shortBarResetToggle.checked = shortBarResetTime();
     panelLayoutCombo.currentKey = panelLayoutStyle();
   }
 
@@ -70,6 +75,7 @@ ColumnLayout {
     pluginApi.pluginSettings = Object.assign({}, pluginApi.pluginSettings || {}, {
       "providers": nextProviders,
       "barWindows": nextBarWindows,
+      "shortBarResetTime": shortBarResetToggle.checked,
       "panelLayoutStyle": panelLayoutCombo.currentKey || "default"
     });
     pluginApi.saveSettings();
@@ -177,5 +183,14 @@ ColumnLayout {
     description: "Show 30d quota percentages and remaining reset time when a provider reports them."
     checked: true
     onToggled: checked => monthlyToggle.checked = checked
+  }
+
+  NToggle {
+    id: shortBarResetToggle
+    Layout.fillWidth: true
+    label: "Short reset times"
+    description: "Show coarse reset-left values in the bar, such as 3h or 2d instead of 3h23m or 2d3h."
+    checked: false
+    onToggled: checked => shortBarResetToggle.checked = checked
   }
 }

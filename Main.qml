@@ -81,6 +81,10 @@ Item {
     return isBarWindowEnabled("five_hour") || isBarWindowEnabled("weekly") || isBarWindowEnabled("monthly");
   }
 
+  function useShortBarResetTime() {
+    return pluginApi && pluginApi.pluginSettings && pluginApi.pluginSettings.shortBarResetTime === true;
+  }
+
   function enabledProviderIds() {
     var ids = [];
     if (isProviderEnabled("codex"))
@@ -499,12 +503,36 @@ Item {
     return days + "d";
   }
 
+  function formatResetRemainingCoarse(value) {
+    if (!value)
+      return "";
+    var reset = new Date(value);
+    if (isNaN(reset.getTime()))
+      return "";
+    var minutes = Math.max(0, Math.ceil((reset.getTime() - Date.now()) / 60000));
+    if (minutes < 60)
+      return minutes + "m";
+
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24)
+      return hours + "h";
+
+    return Math.floor(hours / 24) + "d";
+  }
+
+  function barResetRemaining(value) {
+    return useShortBarResetTime() ? formatResetRemainingCoarse(value) : formatResetRemaining(value);
+  }
+
   function barWindowText(windowData, includeLabel) {
     var text = "";
     if (includeLabel)
       text += (windowData.label || windowData.id) + ":";
-    text += displayPercentText(windowData);
-    var reset = formatResetRemaining(windowData.resetAt);
+    if (displayPercent(windowData) >= 100)
+      text += "full";
+    else
+      text += displayPercentText(windowData);
+    var reset = barResetRemaining(windowData.resetAt);
     if (reset !== "")
       text += ":" + reset;
     return text;
