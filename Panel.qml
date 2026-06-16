@@ -97,45 +97,22 @@ Item {
   }
 
   function windowDetailText(windowData) {
+    if (!service || !windowData)
+      return "n/a";
     var parts = [service.displayPercentText(windowData) + " " + service.representationName()];
     var alternateText = service.alternatePercentText(windowData);
     if (alternateText !== "n/a")
       parts.push(alternateText + " " + service.alternateRepresentationName());
-    if (windowData.resetAt)
-      parts.push("reset " + service.formatDateTime(windowData.resetAt));
+    var reset = service.formatResetRemaining(windowData.resetAt);
+    if (reset !== "")
+      parts.push(reset);
     return parts.join(" | ");
   }
 
-  function appendProviderDetails(rows, id) {
-    var p = provider(id);
-    var providerLabel = p ? (p.label || id) : id;
-    if (!p || p.available === false)
-      return;
-
-    var windows = quotaWindows(p);
-    if (windows.length === 0)
-      return;
-
-    for (var j = 0; j < windows.length; j++) {
-      var windowData = windows[j];
-      rows.push({
-        label: providerLabel + " " + (windowData.label || windowData.id),
-        value: windowDetailText(windowData)
-      });
-    }
-  }
-
-  function detailRows() {
-    var rows = [
-      {
-        label: "Last refreshed",
-        value: service ? service.formatDateTime(service.lastUpdated) : "n/a"
-      }
-    ];
-    var ids = service ? service.enabledProviderIds() : [];
-    for (var i = 0; i < ids.length; i++)
-      appendProviderDetails(rows, ids[i]);
-    return rows;
+  function headerRefreshText() {
+    if (!service || !service.lastUpdated)
+      return "Not refreshed yet";
+    return "Updated " + service.formatTime(service.lastUpdated);
   }
 
   function providerCards() {
@@ -165,26 +142,30 @@ Item {
     return cards;
   }
 
-  function graphMax(providerData) {
-    if (!service || !providerData)
-      return 100;
-    if (providerData.mode === "exact-remaining")
-      return 100;
-    service.historyVersion;
-    return service.historyMax(providerData.id);
-  }
-
   function clampPercent(value) {
     if (value === null || value === undefined || isNaN(value))
       return 0;
     return Math.max(0, Math.min(100, value));
   }
 
-  function displayPercent(providerData) {
-    var primary = primaryWindow(providerData);
-    if (!primary)
+  function windowDisplayPercent(windowData) {
+    if (!service || !windowData)
       return 0;
-    return clampPercent(service ? service.displayPercent(primary) : 0);
+    return clampPercent(service.displayPercent(windowData));
+  }
+
+  function resetClockText(windowData) {
+    if (!service || !windowData || !windowData.resetAt)
+      return "reset n/a";
+    var reset = new Date(windowData.resetAt);
+    if (isNaN(reset.getTime()))
+      return "reset " + windowData.resetAt;
+    var now = new Date();
+    if (reset.getFullYear() === now.getFullYear()
+        && reset.getMonth() === now.getMonth()
+        && reset.getDate() === now.getDate())
+      return "reset " + service.formatTime(windowData.resetAt);
+    return "reset " + Qt.formatDateTime(reset, "MMM d HH:mm");
   }
 
   Flickable {
@@ -217,12 +198,23 @@ Item {
             color: Color.mPrimary
           }
 
-          NText {
-            text: "AI Usage"
-            pointSize: Style.fontSizeL
-            font.weight: Style.fontWeightBold
-            color: Color.mOnSurface
+          ColumnLayout {
+            spacing: 0
             Layout.fillWidth: true
+
+            NText {
+              text: "AI Usage"
+              pointSize: Style.fontSizeL
+              font.weight: Style.fontWeightBold
+              color: Color.mOnSurface
+            }
+
+            NText {
+              text: root.headerRefreshText()
+              pointSize: Style.fontSizeXS
+              color: Color.mOnSurfaceVariant
+              family: Settings.data.ui.fontFixed
+            }
           }
 
           NIconButton {
@@ -282,15 +274,17 @@ Item {
           required property var modelData
           readonly property var providerData: root.provider(modelData.id)
           readonly property color accentColor: root.stateColor(providerData, modelData.color)
+          readonly property var windows: root.quotaWindows(providerData)
 
           Layout.fillWidth: true
-          Layout.preferredHeight: Math.round(116 * Style.uiScaleRatio)
+          implicitHeight: cardColumn.implicitHeight + Style.marginS + Style.radiusM * 0.5
 
           ColumnLayout {
+            id: cardColumn
             anchors.fill: parent
             anchors.margins: Style.marginS
             anchors.bottomMargin: Style.radiusM * 0.5
-            spacing: Style.marginXS
+            spacing: Style.marginS
 
             RowLayout {
               Layout.fillWidth: true
@@ -307,14 +301,6 @@ Item {
                   color: card.accentColor
                   family: Settings.data.ui.fontFixed
                 }
-
-                NText {
-                  text: root.subMetricText(card.providerData)
-                  pointSize: Style.fontSizeXS
-                  color: Color.mOnSurfaceVariant
-                  elide: Text.ElideRight
-                  Layout.fillWidth: true
-                }
               }
 
               NText {
@@ -326,43 +312,29 @@ Item {
               }
             }
 
-            Item {
-              id: usageBarSlot
-
-              readonly property real displayPercent: root.displayPercent(card.providerData)
-
+            ColumnLayout {
               Layout.fillWidth: true
-              Layout.fillHeight: true
-              Layout.minimumHeight: Math.round(18 * Style.uiScaleRatio)
+              spacing: Style.marginXS
+              visible: card.windows.length > 0
 
-              Rectangle {
-                id: usageBarTrack
+              Repeater {
+                model: card.windows
 
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: Math.max(8, Math.round(14 * Style.uiScaleRatio))
-                radius: Math.round(height / 2)
-                color: card.accentColor
-                opacity: 0.16
-              }
-
-              Rectangle {
-                anchors.left: usageBarTrack.left
-                anchors.verticalCenter: usageBarTrack.verticalCenter
-                width: Math.round(usageBarTrack.width * usageBarSlot.displayPercent / 100)
-                height: usageBarTrack.height
-                radius: usageBarTrack.radius
-                color: card.accentColor
-                visible: width > 0
-
-                Behavior on width {
-                  NumberAnimation {
-                    duration: 180
-                    easing.type: Easing.OutCubic
-                  }
+                delegate: WindowRow {
+                  required property var modelData
+                  windowData: modelData
+                  accentColor: card.accentColor
                 }
               }
+            }
+
+            NText {
+              text: root.subMetricText(card.providerData)
+              pointSize: Style.fontSizeXS
+              color: Color.mOnSurfaceVariant
+              wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+              Layout.fillWidth: true
+              visible: card.windows.length === 0
             }
 
             RowLayout {
@@ -390,68 +362,79 @@ Item {
           }
         }
       }
-
-      NBox {
-        Layout.fillWidth: true
-        implicitHeight: detailsColumn.implicitHeight + Style.margin2M
-
-        ColumnLayout {
-          id: detailsColumn
-          anchors.fill: parent
-          anchors.margins: Style.marginM
-          spacing: Style.marginXS
-
-          NText {
-            text: "Details"
-            pointSize: Style.fontSizeM
-            font.weight: Style.fontWeightSemiBold
-            color: Color.mOnSurface
-          }
-
-          Repeater {
-            model: {
-              if (service) {
-                service.providers;
-                service.lastUpdated;
-                service.settingsVersion;
-                service.refreshVersion;
-              }
-              return root.detailRows();
-            }
-
-            delegate: DetailRow {
-              required property var modelData
-              label: modelData.label
-              value: modelData.value
-            }
-          }
-        }
-      }
     }
   }
 
-  component DetailRow: RowLayout {
-    property string label: ""
-    property string value: ""
+  component WindowRow: ColumnLayout {
+    property var windowData
+    property color accentColor: Color.mPrimary
 
     Layout.fillWidth: true
-    spacing: Style.marginM
+    spacing: Style.marginXS
 
-    NText {
-      text: label
-      pointSize: Style.fontSizeXS
-      color: Color.mOnSurfaceVariant
+    RowLayout {
       Layout.fillWidth: true
+      spacing: Style.marginS
+
+      NText {
+        text: windowData ? (windowData.label || windowData.id) : ""
+        pointSize: Style.fontSizeXS
+        font.weight: Style.fontWeightSemiBold
+        color: accentColor
+        family: Settings.data.ui.fontFixed
+        Layout.preferredWidth: Math.round(32 * Style.uiScaleRatio)
+      }
+
+      NText {
+        text: root.windowDetailText(windowData)
+        pointSize: Style.fontSizeXS
+        color: Color.mOnSurface
+        family: Settings.data.ui.fontFixed
+        elide: Text.ElideRight
+        Layout.fillWidth: true
+      }
+
+      NText {
+        text: root.resetClockText(windowData)
+        pointSize: Style.fontSizeXS
+        color: Color.mOnSurfaceVariant
+        horizontalAlignment: Text.AlignRight
+      }
     }
 
-    NText {
-      text: value
-      pointSize: Style.fontSizeXS
-      color: Color.mOnSurface
-      family: Settings.data.ui.fontFixed
-      horizontalAlignment: Text.AlignRight
-      wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-      Layout.maximumWidth: Math.round(root.contentPreferredWidth * 0.48)
+    Item {
+      id: windowBarSlot
+
+      readonly property real displayPercent: root.windowDisplayPercent(windowData)
+
+      Layout.fillWidth: true
+      Layout.preferredHeight: Math.max(6, Math.round(8 * Style.uiScaleRatio))
+
+      Rectangle {
+        id: windowBarTrack
+
+        anchors.fill: parent
+        radius: Math.round(height / 2)
+        color: accentColor
+        opacity: 0.16
+      }
+
+      Rectangle {
+        anchors.left: windowBarTrack.left
+        anchors.verticalCenter: windowBarTrack.verticalCenter
+        width: Math.round(windowBarTrack.width * windowBarSlot.displayPercent / 100)
+        height: windowBarTrack.height
+        radius: windowBarTrack.radius
+        color: accentColor
+        visible: width > 0
+
+        Behavior on width {
+          NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutCubic
+          }
+        }
+      }
     }
   }
 }
