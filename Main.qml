@@ -524,10 +524,18 @@ Item {
     return useShortBarResetTime() ? formatResetRemainingCoarse(value) : formatResetRemaining(value);
   }
 
+  function barWindowLabel(windowData) {
+    if (!windowData)
+      return "";
+    if (windowData.id === "cursor_auto_composer")
+      return "Auto";
+    return windowData.label || windowData.id;
+  }
+
   function barWindowText(windowData, includeLabel) {
     var text = "";
     if (includeLabel)
-      text += (windowData.label || windowData.id) + ":";
+      text += barWindowLabel(windowData) + ":";
     if (displayPercent(windowData) >= 100)
       text += "full";
     else
