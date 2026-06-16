@@ -122,6 +122,18 @@ Item {
     return "Updated " + service.formatTime(service.lastUpdated);
   }
 
+  function panelLayoutStyle() {
+    if (service)
+      service.settingsVersion;
+    if (!pluginApi || !pluginApi.pluginSettings)
+      return "default";
+    return pluginApi.pluginSettings.panelLayoutStyle || "default";
+  }
+
+  function isMeterRowsStyle() {
+    return panelLayoutStyle() === "meterRows";
+  }
+
   function providerCards() {
     var cards = [];
     if (!service)
@@ -331,6 +343,7 @@ Item {
                   required property var modelData
                   windowData: modelData
                   accentColor: card.accentColor
+                  meterRows: root.isMeterRowsStyle()
                 }
               }
             }
@@ -375,11 +388,13 @@ Item {
   component WindowRow: ColumnLayout {
     property var windowData
     property color accentColor: Color.mPrimary
+    property bool meterRows: false
 
     Layout.fillWidth: true
-    spacing: Style.marginXS
+    spacing: meterRows ? 0 : Style.marginXS
 
     RowLayout {
+      visible: !meterRows
       Layout.fillWidth: true
       spacing: Style.marginS
 
@@ -410,10 +425,84 @@ Item {
     }
 
     Item {
+      id: meterRowSlot
+
+      readonly property real displayPercent: root.windowDisplayPercent(windowData)
+
+      visible: meterRows
+      Layout.fillWidth: true
+      Layout.preferredHeight: Math.max(Math.round(34 * Style.uiScaleRatio), meterContent.implicitHeight + Style.marginS)
+
+      Rectangle {
+        id: meterTrack
+
+        anchors.fill: parent
+        radius: Style.radiusS
+        color: accentColor
+        opacity: 0.12
+      }
+
+      Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: Math.round(parent.width * meterRowSlot.displayPercent / 100)
+        radius: meterTrack.radius
+        color: accentColor
+        opacity: 0.32
+        visible: width > 0
+
+        Behavior on width {
+          NumberAnimation {
+            duration: 180
+            easing.type: Easing.OutCubic
+          }
+        }
+      }
+
+      RowLayout {
+        id: meterContent
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.marginS
+        anchors.rightMargin: Style.marginS
+        spacing: Style.marginS
+
+        NText {
+          text: windowData ? (windowData.label || windowData.id) : ""
+          pointSize: Style.fontSizeXS
+          font.weight: Style.fontWeightSemiBold
+          color: accentColor
+          family: Settings.data.ui.fontFixed
+          Layout.preferredWidth: Math.round(32 * Style.uiScaleRatio)
+        }
+
+        NText {
+          text: root.windowDetailText(windowData)
+          pointSize: Style.fontSizeXS
+          color: Color.mOnSurface
+          family: Settings.data.ui.fontFixed
+          elide: Text.ElideRight
+          Layout.fillWidth: true
+        }
+
+        NText {
+          text: root.resetClockText(windowData)
+          pointSize: Style.fontSizeXS
+          color: Color.mOnSurface
+          horizontalAlignment: Text.AlignRight
+        }
+      }
+    }
+
+    Item {
       id: windowBarSlot
 
       readonly property real displayPercent: root.windowDisplayPercent(windowData)
 
+      visible: !meterRows
       Layout.fillWidth: true
       Layout.preferredHeight: Math.max(6, Math.round(8 * Style.uiScaleRatio))
 

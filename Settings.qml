@@ -36,6 +36,12 @@ ColumnLayout {
     return windows[id] !== false;
   }
 
+  function panelLayoutStyle() {
+    if (!pluginApi || !pluginApi.pluginSettings)
+      return "default";
+    return pluginApi.pluginSettings.panelLayoutStyle || "default";
+  }
+
   function loadSettings() {
     codexToggle.checked = providerEnabled("codex");
     opencodeGoToggle.checked = providerEnabled("opencode-go");
@@ -43,6 +49,7 @@ ColumnLayout {
     fiveHourToggle.checked = barWindowEnabled("five_hour");
     weeklyToggle.checked = barWindowEnabled("weekly");
     monthlyToggle.checked = barWindowEnabled("monthly");
+    panelLayoutCombo.currentKey = panelLayoutStyle();
   }
 
   function saveSettings() {
@@ -62,7 +69,8 @@ ColumnLayout {
 
     pluginApi.pluginSettings = Object.assign({}, pluginApi.pluginSettings || {}, {
       "providers": nextProviders,
-      "barWindows": nextBarWindows
+      "barWindows": nextBarWindows,
+      "panelLayoutStyle": panelLayoutCombo.currentKey || "default"
     });
     pluginApi.saveSettings();
     pluginApi.mainInstance?.reloadSettings();
@@ -102,6 +110,34 @@ ColumnLayout {
     description: "Read Claude Code quota data from statusline cache or OAuth usage."
     checked: true
     onToggled: checked => claudeToggle.checked = checked
+  }
+
+  NLabel {
+    Layout.fillWidth: true
+    label: "Panel"
+    description: "Choose how quota windows are rendered in the expanded plugin menu."
+    icon: "layout-list"
+    iconColor: Color.mPrimary
+  }
+
+  NComboBox {
+    id: panelLayoutCombo
+    Layout.fillWidth: true
+    label: "Window layout"
+    description: "Default keeps separate text and bars; meter rows combine them into filled rows."
+    model: [
+      {
+        "key": "default",
+        "name": "Default"
+      },
+      {
+        "key": "meterRows",
+        "name": "Meter rows"
+      }
+    ]
+    currentKey: "default"
+    defaultValue: "default"
+    onSelected: key => panelLayoutCombo.currentKey = key
   }
 
   NLabel {

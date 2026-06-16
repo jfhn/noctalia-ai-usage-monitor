@@ -26,6 +26,7 @@
         "weekly": true,
         "monthly": true
       },
+      "panelLayoutStyle": "default",
       "compactMode": false,
       "showCosts": true,
       "showUsedOnlyProvidersInBar": true
