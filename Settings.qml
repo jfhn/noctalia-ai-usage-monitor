@@ -39,6 +39,8 @@ ColumnLayout {
   function panelLayoutStyle() {
     if (!pluginApi || !pluginApi.pluginSettings)
       return "default";
+    if (pluginApi.pluginSettings.panelLayoutStyle === "tiles")
+      return "animatedTiles";
     return pluginApi.pluginSettings.panelLayoutStyle || "default";
   }
 
@@ -150,10 +152,6 @@ ColumnLayout {
       {
         "key": "meterRows",
         "name": "Meter rows"
-      },
-      {
-        "key": "tiles",
-        "name": "Tiles"
       },
       {
         "key": "segmentedTiles",

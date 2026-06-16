@@ -14,6 +14,17 @@ Item {
   property real contentPreferredWidth: Math.round(440 * Style.uiScaleRatio)
   property real contentPreferredHeight: Math.min(760 * Style.uiScaleRatio, mainColumn.implicitHeight + Style.margin2L)
   property bool allowAttach: true
+  property int panelOpenAnimationVersion: 0
+  property int meterResetAnimationDelayMs: 500
+
+  Connections {
+    target: root.pluginApi
+
+    function onPanelOpenScreenChanged() {
+      if (root.pluginApi && root.pluginApi.panelOpenScreen)
+        root.panelOpenAnimationVersion++;
+    }
+  }
 
   function provider(id) {
     return service ? service.providerById(id) : null;
@@ -122,12 +133,18 @@ Item {
     return "Updated " + service.formatTime(service.lastUpdated);
   }
 
+  function normalizePanelLayoutStyle(style) {
+    if (style === "tiles")
+      return "animatedTiles";
+    return style || "default";
+  }
+
   function panelLayoutStyle() {
     if (service)
       service.settingsVersion;
     if (!pluginApi || !pluginApi.pluginSettings)
       return "default";
-    return pluginApi.pluginSettings.panelLayoutStyle || "default";
+    return normalizePanelLayoutStyle(pluginApi.pluginSettings.panelLayoutStyle);
   }
 
   function isMeterRowsStyle() {
@@ -136,7 +153,7 @@ Item {
 
   function isAnyTilesStyle() {
     var style = panelLayoutStyle();
-    return style === "tiles" || style === "segmentedTiles" || style === "animatedTiles";
+    return style === "segmentedTiles" || style === "animatedTiles";
   }
 
   function providerAccentColor(id) {
@@ -392,6 +409,7 @@ Item {
                   windowData: modelData
                   accentColor: card.accentColor
                   tileStyle: root.panelLayoutStyle()
+                  openAnimationVersion: root.panelOpenAnimationVersion
                 }
               }
             }
@@ -589,26 +607,55 @@ Item {
 
     property var windowData
     property color accentColor: Color.mPrimary
-    property string tileStyle: "tiles"
+    property string tileStyle: "animatedTiles"
+    property int openAnimationVersion: 0
 
     readonly property string resetLeft: root.service ? root.service.formatResetRemaining(windowData && windowData.resetAt) : ""
     readonly property real displayPercent: root.windowDisplayPercent(windowData)
     readonly property bool animatedTiles: tileStyle === "animatedTiles"
     readonly property bool segmentedTiles: tileStyle === "segmentedTiles"
+    property bool meterBehaviorEnabled: true
     property real meterPercent: 0
 
     Layout.fillWidth: true
     Layout.preferredHeight: Math.max(Math.round((segmentedTiles ? 68 : 58) * Style.uiScaleRatio), tileContent.implicitHeight + Style.marginM + (segmentedTiles ? Math.round(12 * Style.uiScaleRatio) : 0))
     clip: true
 
-    Component.onCompleted: meterPercent = displayPercent
-    onDisplayPercentChanged: meterPercent = displayPercent
+    Component.onCompleted: animateMeter(true)
+    onDisplayPercentChanged: animateMeter(false)
+    onTileStyleChanged: animateMeter(true)
+    onOpenAnimationVersionChanged: animateMeter(true)
+
+    function animateMeter(reset) {
+      if (!animatedTiles && !segmentedTiles) {
+        meterStartTimer.stop();
+        meterPercent = displayPercent;
+        return;
+      }
+      if (reset) {
+        meterBehaviorEnabled = false;
+        meterPercent = 0;
+        meterBehaviorEnabled = true;
+      }
+      meterStartTimer.interval = reset ? root.meterResetAnimationDelayMs : 16;
+      meterStartTimer.restart();
+    }
 
     Behavior on meterPercent {
+      enabled: tileRoot.meterBehaviorEnabled
+
       NumberAnimation {
         duration: 260
         easing.type: Easing.OutCubic
       }
+    }
+
+    Timer {
+      id: meterStartTimer
+
+      interval: root.meterResetAnimationDelayMs
+      repeat: false
+      onTriggered: tileRoot.meterPercent = tileRoot.displayPercent
     }
 
     Rectangle {
@@ -626,8 +673,11 @@ Item {
       anchors.left: parent.left
       anchors.top: parent.top
       anchors.bottom: parent.bottom
-      width: Math.round(parent.width * tileRoot.meterPercent / 100)
-      radius: tileTrack.radius
+      anchors.leftMargin: tileTrack.border.width
+      anchors.topMargin: tileTrack.border.width
+      anchors.bottomMargin: tileTrack.border.width
+      width: Math.round(Math.max(0, parent.width - tileTrack.border.width * 2) * tileRoot.meterPercent / 100)
+      radius: 0
       color: accentColor
       opacity: 0.28
       visible: tileRoot.animatedTiles && width > 0
@@ -638,7 +688,7 @@ Item {
       anchors.right: parent.right
       anchors.bottom: parent.bottom
       height: Math.max(2, Math.round(3 * Style.uiScaleRatio))
-      radius: Math.round(height / 2)
+      radius: 0
       color: accentColor
       opacity: 0.22
       visible: tileRoot.animatedTiles
@@ -649,7 +699,7 @@ Item {
       anchors.bottom: parent.bottom
       width: Math.round(parent.width * tileRoot.meterPercent / 100)
       height: Math.max(2, Math.round(3 * Style.uiScaleRatio))
-      radius: Math.round(height / 2)
+      radius: 0
       color: accentColor
       opacity: 0.9
       visible: tileRoot.animatedTiles && width > 0

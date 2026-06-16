@@ -75,7 +75,6 @@ Default settings are defined in `manifest.json`:
 
 - `default`
 - `meterRows`
-- `tiles`
 - `segmentedTiles`
 - `animatedTiles`
 
